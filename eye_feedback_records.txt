@@ -1,0 +1,156 @@
+EYE-RELATED STICKER FEEDBACK RECORDS
+Last 3 Weeks (Aug 18-19, 2025)
+=====================================
+
+RECORD 1:
+Model Run ID: d9fa78f9-f8eb-461c-b0bc-cf88ac1cf3da
+Created: 2025-08-19 05:41:53
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/d9fa78f9-f8eb-461c-b0bc-cf88ac1cf3da/d9fa78f9-f8eb-461c-b0bc-cf88ac1cf3da_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/d9fa78f9-f8eb-461c-b0bc-cf88ac1cf3da_output.png
+Feedback: "Make the man taller and skinnier. Make the man's eyes open"
+
+RECORD 2:
+Model Run ID: 3b8d43c6-b9f0-4845-b8d9-1cf20bce24a3
+Created: 2025-08-19 05:33:18
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/3b8d43c6-b9f0-4845-b8d9-1cf20bce24a3/3b8d43c6-b9f0-4845-b8d9-1cf20bce24a3_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/3b8d43c6-b9f0-4845-b8d9-1cf20bce24a3_output.png
+Feedback: "Change eyes to blue blue 
+
+Blue eyes on my husband please "
+
+RECORD 3:
+Model Run ID: ed18062c-9e58-4880-a1b4-4127c138123f
+Created: 2025-08-19 04:17:42
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/ed18062c-9e58-4880-a1b4-4127c138123f/ed18062c-9e58-4880-a1b4-4127c138123f_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/ed18062c-9e58-4880-a1b4-4127c138123f_output.png
+Feedback: "Make woman's eyes lighter brown and lighter brown skin."
+
+RECORD 4:
+Model Run ID: 212d01fd-2710-4254-92d8-4765364c2227
+Created: 2025-08-19 03:11:21
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/212d01fd-2710-4254-92d8-4765364c2227/212d01fd-2710-4254-92d8-4765364c2227_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/212d01fd-2710-4254-92d8-4765364c2227_output.png
+Feedback: "Adult male with eyes open and blue eyes.  The little girl with blue eyes please"
+
+RECORD 5:
+Model Run ID: 16919a5d-84ad-4402-8671-188c76185622
+Created: 2025-08-19 03:06:53
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/16919a5d-84ad-4402-8671-188c76185622/16919a5d-84ad-4402-8671-188c76185622_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/16919a5d-84ad-4402-8671-188c76185622_output.png
+Feedback: "Make the woman's eyes hazel almost like a brownish green color. And make the guys eyes a little more Asian like if possible. "
+
+RECORD 6:
+Model Run ID: 2a9991b5-b007-4f7a-b366-ee2e3f3e57d2
+Created: 2025-08-19 02:31:58
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/2a9991b5-b007-4f7a-b366-ee2e3f3e57d2/2a9991b5-b007-4f7a-b366-ee2e3f3e57d2_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/2a9991b5-b007-4f7a-b366-ee2e3f3e57d2_output.png
+Feedback: "Make girls eyes green / hazel 
+Make girls hair longer 
+Remove sunglasses from hat "
+
+RECORD 7:
+Model Run ID: c4af13e5-b646-4a7a-9f1d-6824f3ca0b81
+Created: 2025-08-19 02:06:16
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/c4af13e5-b646-4a7a-9f1d-6824f3ca0b81/c4af13e5-b646-4a7a-9f1d-6824f3ca0b81_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/c4af13e5-b646-4a7a-9f1d-6824f3ca0b81_output.png
+Feedback: "Hello! Can we please make my boyfriend's eyes blue?"
+
+RECORD 8:
+Model Run ID: 875a07c7-368e-47f0-a3c6-65088935f32c
+Created: 2025-08-18 23:35:36
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/875a07c7-368e-47f0-a3c6-65088935f32c/875a07c7-368e-47f0-a3c6-65088935f32c_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/875a07c7-368e-47f0-a3c6-65088935f32c_output.png
+Feedback: "i'd like my eyes to be more Chibi style"
+
+RECORD 9:
+Model Run ID: e5ca67ad-a31d-4006-990f-39e3d2f38860
+Created: 2025-08-18 23:25:27
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/e5ca67ad-a31d-4006-990f-39e3d2f38860/e5ca67ad-a31d-4006-990f-39e3d2f38860_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/e5ca67ad-a31d-4006-990f-39e3d2f38860_output.png
+Feedback: "He looks too big and I have piercings. And eyebrow on the right and a dermal on the right just below my eye and a Monroe piercing on the left"
+
+RECORD 10:
+Model Run ID: 4fd67796-2f72-4e0c-bf70-db5de90413ab
+Created: 2025-08-18 22:29:15
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/4fd67796-2f72-4e0c-bf70-db5de90413ab/4fd67796-2f72-4e0c-bf70-db5de90413ab_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/4fd67796-2f72-4e0c-bf70-db5de90413ab_output.png
+Feedback: "Eyes open "
+
+RECORD 11:
+Model Run ID: d679e4b5-e846-415b-9f5d-59b5edd0a814
+Created: 2025-08-18 22:17:38
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/d679e4b5-e846-415b-9f5d-59b5edd0a814/d679e4b5-e846-415b-9f5d-59b5edd0a814_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/d679e4b5-e846-415b-9f5d-59b5edd0a814_output.png
+Feedback: "Her eyes are blue not brown and the sticker made them brown"
+
+RECORD 12:
+Model Run ID: 36824431-ab2a-46a1-bbc3-b518e81e9002
+Created: 2025-08-18 22:02:58
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/36824431-ab2a-46a1-bbc3-b518e81e9002/36824431-ab2a-46a1-bbc3-b518e81e9002_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/36824431-ab2a-46a1-bbc3-b518e81e9002_output.png
+Feedback: "Woman's eyes need to be blue and man's eyes hazel "
+
+RECORD 13:
+Model Run ID: 9e5a868b-b2bf-48a4-8905-22b901eaf61a
+Created: 2025-08-18 20:47:06
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/9e5a868b-b2bf-48a4-8905-22b901eaf61a/9e5a868b-b2bf-48a4-8905-22b901eaf61a_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/9e5a868b-b2bf-48a4-8905-22b901eaf61a_output.png
+Feedback: "Make the woman's eyes blue 
+Make the woman skinnier"
+
+RECORD 14:
+Model Run ID: d94aa6d1-3f87-4537-8adb-46d2ce5984cf
+Created: 2025-08-18 20:31:38
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/d94aa6d1-3f87-4537-8adb-46d2ce5984cf/d94aa6d1-3f87-4537-8adb-46d2ce5984cf_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/d94aa6d1-3f87-4537-8adb-46d2ce5984cf_output.png
+Feedback: "His eyes blue and hers green"
+
+RECORD 15:
+Model Run ID: c8094a19-a0ca-4f4c-bdc6-e54e840cda60
+Created: 2025-08-18 20:24:18
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/c8094a19-a0ca-4f4c-bdc6-e54e840cda60/c8094a19-a0ca-4f4c-bdc6-e54e840cda60_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/c8094a19-a0ca-4f4c-bdc6-e54e840cda60_output.png
+Feedback: "Make the woman's eyes blue and add freckles. Update the man's hair to salt and pepper and remove the facial hair. "
+
+RECORD 16:
+Model Run ID: 5c5d6f57-5cf6-4eae-8c90-41107d68da3e
+Created: 2025-08-18 19:39:34
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/5c5d6f57-5cf6-4eae-8c90-41107d68da3e/5c5d6f57-5cf6-4eae-8c90-41107d68da3e_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/5c5d6f57-5cf6-4eae-8c90-41107d68da3e_output.png
+Feedback: "My husband isn't bald. His hair is blonde and my eyes are blue not brown "
+
+RECORD 17:
+Model Run ID: 35a6376c-efee-4e36-ab8a-9076ff76a8c9
+Created: 2025-08-18 18:44:11
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/35a6376c-efee-4e36-ab8a-9076ff76a8c9/35a6376c-efee-4e36-ab8a-9076ff76a8c9_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/35a6376c-efee-4e36-ab8a-9076ff76a8c9_output.png
+Feedback: "We have colored eyes and my wifes waist is smaller"
+
+RECORD 18:
+Model Run ID: 62b06ec8-6e35-43a5-9bb4-c080f2d8977a
+Created: 2025-08-18 18:26:24
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/62b06ec8-6e35-43a5-9bb4-c080f2d8977a/62b06ec8-6e35-43a5-9bb4-c080f2d8977a_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/62b06ec8-6e35-43a5-9bb4-c080f2d8977a_output.png
+Feedback: "Make the females eyes green & the males eyes green/brown please."
+
+RECORD 19:
+Model Run ID: 1fd01e1f-578b-4e58-979e-94d902c96bb6
+Created: 2025-08-18 16:22:52
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/1fd01e1f-578b-4e58-979e-94d902c96bb6/1fd01e1f-578b-4e58-979e-94d902c96bb6_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/1fd01e1f-578b-4e58-979e-94d902c96bb6_output.png
+Feedback: "I have hazel eyes and they're not shown in sticker."
+
+RECORD 20:
+Model Run ID: ca4db612-7b9d-4688-b08f-ac9207ffadb7
+Created: 2025-08-18 15:19:36
+Input Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/user-uploaded-images/ca4db612-7b9d-4688-b08f-ac9207ffadb7/ca4db612-7b9d-4688-b08f-ac9207ffadb7_input.png
+Output Image: https://yqvsxaifoqoohljhidrp.supabase.co/storage/v1/object/public/generated-images/ca4db612-7b9d-4688-b08f-ac9207ffadb7_output.png
+Feedback: "Can you open my eyes? "
+
+=====================================
+SUMMARY:
+- Total Records: 20
+- Date Range: Aug 18-19, 2025 (last 3 weeks)
+- Common Issues: Eye color changes (blue, green, hazel), eyes closed/open
+- Most Frequent Requests: Blue eyes, hazel eyes, open eyes
+=====================================
