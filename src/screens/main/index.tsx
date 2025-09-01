@@ -1259,6 +1259,11 @@ export default function Main() {
       })
 
       const result = await response.json()
+      if (Array.isArray(result?.emailData?.processedUrls)) {
+        result.emailData.processedUrls.forEach((u: string, idx: number) => {
+          console.log(`🧼 RMBG URL ${idx + 1}:`, u)
+        })
+      }
 
       if (result.success) {
         alert(`Email sent successfully to ${currentCard.customer_email}!\n\nMessage ID: ${result.messageId}`)
@@ -1313,6 +1318,11 @@ export default function Main() {
       })
 
       const result = await response.json()
+      if (Array.isArray(result?.emailData?.processedUrls)) {
+        result.emailData.processedUrls.forEach((u: string, idx: number) => {
+          console.log(`🧼 RMBG URL ${idx + 1}:`, u)
+        })
+      }
       if (result.success) {
         alert(`Credit email sent to ${currentCard.customer_email}!\n\nMessage ID: ${result.messageId}`)
         clearImageSelection()

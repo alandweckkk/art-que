@@ -104,6 +104,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
 
     // Initialize Front API client
     let frontClient: FrontAPIClient;
+    const processedUrls: string[] = [];
     try {
       frontClient = new FrontAPIClient();
     } catch (error) {
@@ -143,20 +144,44 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       // Add corrected image attachments (optional for credit mode)
       console.log('📥 Processing corrected images...');
       for (let i = 0; i < (body.correctedImageUrls?.length || 0); i++) {
-        const correctedUrl = body.correctedImageUrls[i];
+        let correctedUrl = body.correctedImageUrls[i];
         const total = body.correctedImageUrls.length;
         const filename = (total === 1 || i === 0)
           ? 'corrected-image.png'
           : `corrected-image-${i + 1}.png`;
         
         console.log(`📥 Processing corrected image ${i + 1}: ${correctedUrl.substring(0, 50)}...`);
+        // Post-process background removal via our API
+        try {
+          // Build absolute origin for server-to-server call
+          const xfProto = request.headers.get('x-forwarded-proto') || 'http';
+          const xfHost = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'localhost:3000';
+          const apiBase = process.env.NEXT_PUBLIC_BASE_URL || `${xfProto}://${xfHost}`;
+          const ppResp = await fetch(`${apiBase}/api/postprocess-image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_url: correctedUrl })
+          });
+          if (ppResp.ok) {
+            const ppData = await ppResp.json();
+            if (ppData?.url) {
+              correctedUrl = ppData.url;
+              console.log(`🧼 Background removed (image ${i + 1})`);
+              processedUrls.push(correctedUrl);
+            }
+          } else {
+            console.warn(`⚠️ Postprocess-image failed for image ${i + 1}: ${ppResp.status}`);
+          }
+        } catch (e) {
+          console.warn(`⚠️ Postprocess-image error for image ${i + 1}:`, e);
+        }
         const correctedAttachment = await frontClient.prepareImageAttachment(
           correctedUrl,
           filename
         );
         if (correctedAttachment) attachments.push(correctedAttachment);
       }
-      console.log('📎 Prepared attachments summary:', { total: attachments.length });
+      console.log('📎 Prepared attachments summary:', { total: attachments.length, processedUrls });
     } catch (attachmentError) {
       console.error('💥 Error preparing attachments:', attachmentError);
     }
@@ -221,13 +246,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
         emailData: {
           subject: emailTemplate.subject,
           body: emailTemplate.body,
-          attachments: attachments.length
+          attachments: attachments.length,
+          processedUrls
         },
         credit: creditResult
       });
     } else {
       return NextResponse.json(
-        { success: false, error: result.error },
+        { success: false, error: result.error, emailData: { processedUrls } },
         { status: 500 }
       );
     }
