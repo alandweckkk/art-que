@@ -10,6 +10,11 @@ interface Job {
   endTime?: number
   result?: unknown
   source: string // Which view/component initiated the job
+  // Optional context for navigation and preview
+  model_run_id?: string
+  original_image_url?: string
+  generated_image_url?: string
+  feedback_notes?: string
 }
 
 interface JobManagerProps {
@@ -37,12 +42,13 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
     }
   }, [jobs, onJobUpdate])
 
-  const addJob = (input: string, source: string) => {
+  const addJob = (input: string, source: string, context?: Partial<Omit<Job, 'id' | 'input' | 'status' | 'source'>>) => {
     const newJob: Job = {
       id: `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       input,
       status: 'pending',
-      source
+      source,
+      ...context
     }
     setJobs(prev => [...prev, newJob])
     return newJob.id
@@ -105,10 +111,18 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
 
   // Make the component globally accessible for other components to use
   useEffect(() => {
-    (window as unknown as { jobManager?: { addJob: typeof addJob; updateJobStatus: typeof updateJobStatus; jobs: Job[] } }).jobManager = {
+    (window as unknown as { jobManager?: { addJob: typeof addJob; updateJobStatus: typeof updateJobStatus; jobs: Job[]; openJobRecord: (modelRunId: string) => void } }).jobManager = {
       addJob,
       updateJobStatus,
-      jobs
+      jobs,
+      openJobRecord: (modelRunId: string) => {
+        const w = window as Window & { openRecordByEmail?: (email: string, preferredModelRunId?: string) => void }
+        // We only have model_run_id; main screen exposes open by email, but also accepts preferred model_run_id
+        // Trigger a global navigation by setting a URL hash; main screen already listens via openRecordByEmail
+        // Here we dispatch a simple custom event that main can listen to in future if needed
+        const evt = new CustomEvent('open-record-by-model-run', { detail: { modelRunId: modelRunId } })
+        window.dispatchEvent(evt)
+      }
     }
   }, [jobs])
 
@@ -174,7 +188,12 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
         ) : (
           <div className="divide-y divide-gray-200 dark:divide-gray-600">
             {jobs.slice().reverse().map((job) => (
-              <div key={job.id} className="p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+              <div key={job.id} className="p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer" onClick={() => {
+                if (job.model_run_id) {
+                  const evt = new CustomEvent('open-record-by-model-run', { detail: { modelRunId: job.model_run_id } })
+                  window.dispatchEvent(evt)
+                }
+              }}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-2 mb-1">
@@ -195,10 +214,18 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
                       <span className="text-xs text-gray-500 dark:text-gray-400">
                         from {job.source}
                       </span>
-                      {job.status === 'completed' && typeof job.result === 'object' && job.result && 'reversed' in job.result && (
-                        <span className="text-xs text-green-600 dark:text-green-400" title={`Result: ${(job.result as { reversed?: string }).reversed ?? ''}`}>
-                          → &quot;{(job.result as { reversed?: string }).reversed}&quot;
+                      {job.feedback_notes && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[140px]" title={job.feedback_notes}>
+                          {job.feedback_notes}
                         </span>
+                      )}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      {job.original_image_url && (
+                        <img src={job.original_image_url} alt="original" className="w-10 h-10 rounded object-cover border" />
+                      )}
+                      {job.generated_image_url && (
+                        <img src={job.generated_image_url} alt="result" className="w-10 h-10 rounded object-cover border" />
                       )}
                     </div>
                   </div>

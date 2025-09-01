@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { globalClientJobQueue } from '@/lib/client-job-queue'
 import { InlineFluxEditor } from '@/components/InlineFluxEditor'
 import { ReactSketchCanvas } from "react-sketch-canvas"
-import { Brush, Eraser, Eye, EyeOff, RotateCcw, Wand2, Sparkles, Zap } from "lucide-react"
+import { Brush, Eraser, Eye, EyeOff, RotateCcw, Wand2, Sparkles, Zap, Trash2 } from "lucide-react"
 
 interface StickerEdit {
   sticker_edit_id: string
@@ -840,42 +840,19 @@ export default function Main() {
 
   // Expose a global helper to open a record by email
   useEffect(() => {
-    (window as Window & { openRecordByEmail?: (email: string, preferredModelRunId?: string) => void }).openRecordByEmail = async (email: string, preferredModelRunId?: string) => {
-      try {
-        // Ensure card data is loaded
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ modelRunId?: string }>).detail
+      const modelRunId = detail?.modelRunId
+      if (!modelRunId) return
+      const idx = cardData.findIndex(c => c.model_run_id === modelRunId)
+      if (idx >= 0) {
         if (viewMode !== 'card') setViewMode('card')
-        if (cardData.length === 0) {
-          await fetchCardViewData()
-        }
-
-        // Try to locate by preferred model_run_id first
-        let index = -1
-        if (preferredModelRunId) {
-          index = cardData.findIndex(c => c.model_run_id === preferredModelRunId)
-        }
-
-        // Fallback: find first by email
-        if (index < 0) {
-          index = cardData.findIndex(c => (c.customer_email || '').toLowerCase() === (email || '').toLowerCase())
-        }
-
-        if (index >= 0) {
-          goToCard(index)
-        } else {
-          // If not found yet, refetch and try one more time
-          await fetchCardViewData()
-          const retryIndex = cardData.findIndex(c => (c.customer_email || '').toLowerCase() === (email || '').toLowerCase())
-          if (retryIndex >= 0) goToCard(retryIndex)
-        }
-      } catch (e) {
-        console.error('Failed to open record by email:', e)
+        goToCard(idx)
       }
     }
-
-    return () => {
-      delete (window as Window & { openRecordByEmail?: (email: string, preferredModelRunId?: string) => void }).openRecordByEmail
-    }
-  }, [cardData, viewMode, fetchCardViewData, goToCard])
+    window.addEventListener('open-record-by-model-run', handler as EventListener)
+    return () => window.removeEventListener('open-record-by-model-run', handler as EventListener)
+  }, [cardData, viewMode])
 
   const updateJobInput = (recordId: string, input: string) => {
     setJobStates(prev => ({
@@ -1003,6 +980,10 @@ export default function Main() {
         if (!result.success || !result.data?.imageUrl) throw new Error(result.error || 'No processed image URL in response');
         handleProcessedImage(result.data.imageUrl);
         return { imageUrl: result.data.imageUrl } as const
+      }, {
+        model_run_id: currentCard.model_run_id,
+        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        feedback_notes: currentCard.feedback_notes
       })
     } catch (e) {
       console.error('Flux generate error:', e);
@@ -1049,6 +1030,10 @@ export default function Main() {
         const processedImageUrl = result.data.images[0].url;
         handleProcessedImage(processedImageUrl);
         return { imageUrl: processedImageUrl } as const
+      }, {
+        model_run_id: currentCard.model_run_id,
+        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        feedback_notes: currentCard.feedback_notes
       })
     } catch (e) {
       console.error('Gemini generate error:', e);
@@ -1134,6 +1119,10 @@ export default function Main() {
         const localUrl = URL.createObjectURL(blob)
         handleProcessedImage(localUrl)
         return { imageUrl: localUrl } as const
+      }, {
+        model_run_id: currentCard.model_run_id,
+        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        feedback_notes: currentCard.feedback_notes
       })
       
     } catch (e) {
@@ -1243,6 +1232,10 @@ export default function Main() {
           body: JSON.stringify(emailData)
         })
         return r
+      }, {
+        model_run_id: currentCard.model_run_id,
+        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        feedback_notes: currentCard.feedback_notes
       })
 
       const result = await (response as Response).json()
@@ -1305,6 +1298,10 @@ export default function Main() {
           body: JSON.stringify(emailData)
         })
         return r
+      }, {
+        model_run_id: currentCard.model_run_id,
+        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        feedback_notes: currentCard.feedback_notes
       })
 
       const result = await (response as Response).json()
@@ -2204,6 +2201,28 @@ export default function Main() {
                                           />
                                           <span className="ml-1 text-xs text-gray-600">Email</span>
                                         </label>
+                                        {/* Delete image from image_history */}
+                                        <button
+                                          title="Delete image"
+                                          className="p-1 rounded hover:bg-red-50 text-red-600"
+                                          onClick={async () => {
+                                            if (!currentCard) return
+                                            const confirmDelete = confirm('Remove this generated image from history?')
+                                            if (!confirmDelete) return
+                                            const newHistory = currentCard.image_history.filter((u) => u !== imageUrl)
+                                            const { error } = await supabase
+                                              .from('y_sticker_edits')
+                                              .update({ image_history: newHistory, updated_at: new Date().toISOString() })
+                                              .eq('model_run_id', currentCard.model_run_id)
+                                            if (!error) {
+                                              setCardData(prev => prev.map(card => card.model_run_id === currentCard.model_run_id ? { ...card, image_history: newHistory } : card))
+                                            } else {
+                                              alert('Failed to delete image')
+                                            }
+                                          }}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
                                       </div>
                                     </div>
                                   </div>

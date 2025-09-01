@@ -21,9 +21,9 @@ export class ClientJobQueue {
     this.concurrency = Math.max(1, concurrency)
   }
 
-  enqueue<T>(input: string, source: string, fn: () => Promise<T>): Promise<T> {
-    const jobManager = (window as { jobManager?: { addJob: (input: string, source: string) => string; updateJobStatus: (id: string, status: JobStatus, result?: unknown) => void } }).jobManager
-    const externalId = jobManager?.addJob ? jobManager.addJob(input, source) : `job_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+  enqueue<T>(input: string, source: string, fn: () => Promise<T>, context?: Record<string, unknown>): Promise<T> {
+    const jobManager = (window as { jobManager?: { addJob: (input: string, source: string, context?: Record<string, unknown>) => string; updateJobStatus: (id: string, status: JobStatus, result?: unknown) => void } }).jobManager
+    const externalId = jobManager?.addJob ? jobManager.addJob(input, source, context) : `job_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
     const job: QueueJob<T> = { id: externalId, input, run: fn, source }
     return new Promise<T>((resolve, reject) => {
       this.queue.push(job as QueueJob<unknown>)
