@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
+import { fal } from '@fal-ai/client';
 
 export async function POST(request: NextRequest) {
   try {
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
       console.warn('⚠️ Could not flatten image, proceeding with original URL:', e);
     }
 
-    // Prepare Fal.AI API request for FLUX Kontext LoRA inpainting
+    // Configure Fal.AI client
     const falApiKey = process.env.FAL_KEY;
     if (!falApiKey) {
       console.error('❌ FAL_KEY environment variable not set');
@@ -87,7 +88,12 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    const falPayload = {
+    // Configure fal client with API key
+    fal.config({
+      credentials: falApiKey,
+    });
+
+    const falInput = {
       image_url: flattenedImageUrl,
       prompt: prompt,
       reference_image_url: flattenedImageUrl, // use flattened image as reference too
@@ -96,71 +102,39 @@ export async function POST(request: NextRequest) {
       guidance_scale: 2.5,
       num_images: 1,
       enable_safety_checker: true,
-      output_format: "png",
-      acceleration: "none",
+      output_format: "png" as const,
       strength: 0.88,
-      loras: []
     };
 
-    console.log('🚀 Calling FLUX Kontext LoRA inpainting API...');
-    
-    // Print the EXACT API call being made to Fal.AI
-    console.log('📞 EXACT FAL.AI API CALL:');
-    console.log('🎯 URL:', 'https://fal.run/fal-ai/flux-kontext-lora/inpaint');
-    console.log('🎯 Method:', 'POST');
-    console.log('🎯 PAYLOAD:');
-    console.log(JSON.stringify(falPayload, null, 2));
-    console.log('🎯 Key URLs:');
-    console.log('   - Image URL:', falPayload.image_url);
-    console.log('   - Reference URL:', falPayload.reference_image_url);
-    console.log('   - Mask URL:', falPayload.mask_url);
+    console.log('🚀 Submitting FLUX Kontext LoRA inpainting request...');
+    console.log('📞 FAL.AI REQUEST:');
+    console.log('🎯 Model:', 'fal-ai/flux-kontext-lora/inpaint');
+    console.log('🎯 INPUT:');
+    console.log(JSON.stringify(falInput, null, 2));
 
-    // Call Fal.AI API - Using the correct FLUX Kontext LoRA inpainting endpoint
-    const falResponse = await fetch('https://fal.run/fal-ai/flux-kontext-lora/inpaint', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Key ${falApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(falPayload),
-    });
-
-    console.log('📡 Fal.AI response status:', falResponse.status);
-    console.log('📡 Response headers:', Object.fromEntries(falResponse.headers.entries()));
-
-    if (!falResponse.ok) {
-      const errorText = await falResponse.text();
-      console.error('❌ Fal.AI API error:', errorText);
-      
-      let errorMessage = `Fal.AI API error (${falResponse.status})`;
-      try {
-        const errorData = JSON.parse(errorText);
-        if (errorData.detail) {
-          errorMessage = errorData.detail;
-        } else if (errorData.error) {
-          errorMessage = errorData.error;
-        }
-      } catch {
-        if (errorText) {
-          errorMessage = errorText;
+    // Submit the request using fal client
+    const result = await fal.subscribe('fal-ai/flux-kontext-lora/inpaint', {
+      input: falInput,
+      logs: true,
+      onQueueUpdate: (update) => {
+        console.log('📊 Queue update:', update.status);
+        if ('logs' in update && update.logs) {
+          update.logs.forEach((log: { message: string }) => console.log('📝 Log:', log.message));
         }
       }
-      
-      return NextResponse.json({ error: errorMessage }, { status: falResponse.status });
-    }
+    });
 
-    const falResult = await falResponse.json();
     console.log('✅ Fal.AI response received');
-    console.log('📊 COMPLETE API RESPONSE:', JSON.stringify(falResult, null, 2));
+    console.log('📊 COMPLETE API RESPONSE:', JSON.stringify(result, null, 2));
 
-    if (!falResult.images || falResult.images.length === 0) {
+    if (!result.data || !result.data.images || result.data.images.length === 0) {
       console.error('❌ No images in Fal.AI response');
       return NextResponse.json({ 
         error: 'No images returned from Fal.AI API' 
       }, { status: 500 });
     }
 
-    const processedImageUrl = falResult.images[0].url;
+    const processedImageUrl = result.data.images[0].url;
     console.log('🖼️ Processed image URL:', processedImageUrl);
 
     // Optional: Download and re-upload to our blob storage for consistency
@@ -190,8 +164,8 @@ export async function POST(request: NextRequest) {
         imageUrl: finalBlob.url,
         filename: processedFilename,
         originalPrompt: prompt,
-        seed: falResult.seed,
-        hasNsfwConcepts: falResult.has_nsfw_concepts,
+        seed: result.data.seed,
+        hasNsfwConcepts: result.data.has_nsfw_concepts,
         maskUrl: maskBlob.url, // Include for debugging
         processingDetails: {
           inferenceSteps: 30,

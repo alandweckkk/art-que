@@ -8,9 +8,10 @@ interface InlineFluxEditorProps {
   imageUrl: string;
   onProcessedImage: (processedImageUrl: string) => void;
   onError?: (error: string) => void;
+  toolsOnly?: boolean; // When true, only show tools, not the image
 }
 
-export function InlineFluxEditor({ imageUrl, onProcessedImage, onError }: InlineFluxEditorProps) {
+export function InlineFluxEditor({ imageUrl, onProcessedImage, onError, toolsOnly = false }: InlineFluxEditorProps) {
   // Canvas and image refs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sketchRef = useRef<any>(null);
