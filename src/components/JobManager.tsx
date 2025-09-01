@@ -140,7 +140,7 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
   return (
     <div className={`fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 transition-all duration-300 ${
       isExpanded ? 'w-96' : 'w-72'
-    }`}>
+    } max-h-[calc(100vh-2rem)] flex flex-col`}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-600">
         <div className="flex items-center space-x-2">
@@ -180,7 +180,7 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
       </div>
 
       {/* Job List */}
-      <div className={`${isExpanded ? 'max-h-96' : 'max-h-64'} overflow-y-auto`}>
+      <div className={`flex-1 min-h-0 overflow-y-auto`}>
         {jobs.length === 0 ? (
           <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
             No jobs yet

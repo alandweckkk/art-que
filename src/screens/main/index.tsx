@@ -828,6 +828,25 @@ export default function Main() {
 
   const currentCard = cardData[currentCardIndex]
 
+  // Reset tool state when switching cards so each card starts fresh
+  useEffect(() => {
+    const card = cardData[currentCardIndex]
+    // Prompts default to this record's feedback
+    setFluxPrompt(card?.feedback_notes || '')
+    setGeminiPrompt(card?.feedback_notes || '')
+    setOpenAIPrompt(card?.feedback_notes || '')
+    // Reset editor UI state/loading flags
+    setIsGenerating(false)
+    setIsGeminiGenerating(false)
+    setIsOpenAIGenerating(false)
+    setShowMaskOverlay(false)
+    setMaskDataUrl('')
+    setTool('brush')
+    setBrushSize(50)
+    // Clear canvas mask if present
+    clearMask()
+  }, [currentCardIndex, cardData])
+
   // Timer to update running job status
   useEffect(() => {
     const interval = setInterval(() => {
