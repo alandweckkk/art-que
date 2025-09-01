@@ -52,7 +52,7 @@ export default function GlobalSearch({ onSelect }: GlobalSearchProps) {
         }
 
         const userIds = (users || []).map(u => u.id)
-        let latestByUser: Record<string, string> = {}
+        const latestByUser: Record<string, string> = {}
         if (userIds.length) {
           // Fetch latest model_run per user within last 3 days matching unresolved with negative reaction
           const { data: runs, error: runError } = await supabase
@@ -65,7 +65,7 @@ export default function GlobalSearch({ onSelect }: GlobalSearchProps) {
             .order('created_at', { ascending: false })
 
           if (!runError && runs) {
-            for (const r of runs as any[]) {
+            for (const r of runs as { id: string; user_id: string }[]) {
               const key = String(r.user_id)
               if (!latestByUser[key]) latestByUser[key] = r.id
             }
@@ -125,5 +125,8 @@ export default function GlobalSearch({ onSelect }: GlobalSearchProps) {
     </div>
   )
 }
+
+
+
 
 

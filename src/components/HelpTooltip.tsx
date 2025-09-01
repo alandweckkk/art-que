@@ -49,7 +49,7 @@ export default function HelpTooltip() {
               {/* Modal Header */}
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Help & Information
+                  Help &amp; Information
                 </h3>
                 <button
                   onClick={closeModal}
@@ -65,7 +65,7 @@ export default function HelpTooltip() {
               <div className="p-6">
                 <div className="space-y-4">
                   <h4 className="font-semibold text-gray-900 dark:text-white">
-                    Who Appears & In What Order?
+                    Who Appears &amp; In What Order?
                   </h4>
                   
                   <div className="space-y-3">
@@ -74,12 +74,12 @@ export default function HelpTooltip() {
                     </h5>
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border-l-4 border-blue-400">
                       <p className="text-gray-700 dark:text-gray-300">
-                        Only customers who gave <strong>negative reactions</strong>, whose <strong>feedback has not been addressed yet</strong>, and who provided feedback <strong>within the past 3 days</strong>. This focuses on recent, actionable negative feedback that needs immediate attention.
+                        Only customers who gave <strong>negative reactions</strong>, whose <strong>feedback has not been addressed yet</strong>, and who provided feedback <strong>within the past 3 days</strong>. This focuses on recent, actionable negative feedback that hasn&apos;t been addressed yet and needs immediate attention.
                       </p>
                       <div className="mt-3 p-2 bg-gray-800 rounded text-xs text-green-400 font-mono">
-                        <div>WHERE reaction = 'negative'</div>
+                        <div>WHERE reaction = &apos;negative&apos;</div>
                         <div>AND feedback_addressed IS NOT TRUE</div>
-                        <div>AND created_at &gt;= NOW() - INTERVAL '3 days'</div>
+                        <div>AND created_at &gt;= NOW() - INTERVAL &apos;3 days&apos;</div>
                       </div>
                     </div>
 
@@ -101,7 +101,7 @@ export default function HelpTooltip() {
                         <p className="font-semibold text-green-800 dark:text-green-200">📦 Bucket 2: Print Order Customers</p>
                         <p className="text-sm text-gray-700 dark:text-gray-300">Customers who ordered physical mail items. Sorted by oldest feedback first.</p>
                         <div className="mt-2 p-2 bg-gray-800 rounded text-xs text-green-400 font-mono">
-                          <div>WHERE stripe_captured_events.pack_type = 'mail_order'</div>
+                          <div>WHERE stripe_captured_events.pack_type = &apos;mail_order&apos;</div>
                           <div>ORDER BY model_run.created_at ASC</div>
                         </div>
                       </div>
@@ -111,7 +111,7 @@ export default function HelpTooltip() {
                         <p className="text-sm text-gray-700 dark:text-gray-300">Customers who spent more than $9 total. Sorted by oldest feedback first.</p>
                         <div className="mt-2 p-2 bg-gray-800 rounded text-xs text-green-400 font-mono">
                           <div>WHERE SUM(stripe_captured_events.amount) &gt; 9</div>
-                          <div>AND pack_type != 'mail_order'</div>
+                          <div>AND pack_type != &apos;mail_order&apos;</div>
                           <div>ORDER BY model_run.created_at ASC</div>
                         </div>
                       </div>
@@ -121,7 +121,7 @@ export default function HelpTooltip() {
                         <p className="text-sm text-gray-700 dark:text-gray-300">All remaining customers. Sorted by oldest feedback first.</p>
                         <div className="mt-2 p-2 bg-gray-800 rounded text-xs text-green-400 font-mono">
                           <div>WHERE SUM(stripe_captured_events.amount) &lt;= 9</div>
-                          <div>AND pack_type != 'mail_order'</div>
+                          <div>AND pack_type != &apos;mail_order&apos;</div>
                           <div>ORDER BY model_run.created_at ASC</div>
                         </div>
                       </div>
@@ -129,7 +129,7 @@ export default function HelpTooltip() {
 
                     <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border-l-4 border-yellow-400 mt-4">
                       <p className="text-sm text-gray-700 dark:text-gray-300">
-                        <strong>In summary:</strong> This system ensures urgent items are handled first, then prioritizes valuable customers, while making sure older feedback doesn't get forgotten.
+                        <strong>In summary:</strong> This system ensures urgent items are handled first, then prioritizes valuable customers, while making sure older feedback doesn&apos;t get forgotten.
                       </p>
                     </div>
                   </div>

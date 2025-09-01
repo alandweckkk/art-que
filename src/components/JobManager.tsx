@@ -8,7 +8,7 @@ interface Job {
   status: 'pending' | 'running' | 'completed' | 'failed'
   startTime?: number
   endTime?: number
-  result?: any
+  result?: unknown
   source: string // Which view/component initiated the job
 }
 
@@ -48,7 +48,7 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
     return newJob.id
   }
 
-  const updateJobStatus = (jobId: string, status: Job['status'], result?: any) => {
+  const updateJobStatus = (jobId: string, status: Job['status'], result?: unknown) => {
     setJobs(prev => prev.map(job => {
       if (job.id === jobId) {
         const updatedJob = { ...job, status }
@@ -105,7 +105,7 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
 
   // Make the component globally accessible for other components to use
   useEffect(() => {
-    (window as any).jobManager = {
+    (window as unknown as { jobManager?: { addJob: typeof addJob; updateJobStatus: typeof updateJobStatus; jobs: Job[] } }).jobManager = {
       addJob,
       updateJobStatus,
       jobs
@@ -189,15 +189,15 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
                       )}
                     </div>
                     <p className="text-sm text-gray-900 dark:text-white truncate" title={job.input}>
-                      "{job.input}"
+                      &quot;{job.input}&quot;
                     </p>
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-gray-500 dark:text-gray-400">
                         from {job.source}
                       </span>
-                      {job.status === 'completed' && job.result?.reversed && (
-                        <span className="text-xs text-green-600 dark:text-green-400" title={`Result: ${job.result.reversed}`}>
-                          → "{job.result.reversed}"
+                      {job.status === 'completed' && typeof job.result === 'object' && job.result && 'reversed' in job.result && (
+                        <span className="text-xs text-green-600 dark:text-green-400" title={`Result: ${(job.result as { reversed?: string }).reversed ?? ''}`}>
+                          → &quot;{(job.result as { reversed?: string }).reversed}&quot;
                         </span>
                       )}
                     </div>

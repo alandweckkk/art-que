@@ -36,7 +36,7 @@ interface StickerEdit {
 interface JobState {
   isRunning: boolean
   input: string
-  result: any
+  result: unknown
   startTime?: number
   globalJobId?: string
 }
@@ -536,7 +536,7 @@ export default function Main() {
     if (viewMode === 'card' && cardData.length === 0) {
       fetchCardViewData()
     }
-  }, [viewMode])
+  }, [viewMode, cardData.length, fetchCardViewData])
 
   // Pagination navigation functions
   const goToNextPage = () => {
@@ -605,9 +605,8 @@ export default function Main() {
       return (
         <div className="flex items-center space-x-1">
           {imageHistory.slice(0, 3).map((url, index) => (
-            <div className="w-6 h-6 rounded border border-gray-300 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+            <div key={`${url}-${index}`} className="w-6 h-6 rounded border border-gray-300 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
               <img
-                key={index}
                 src={url}
                 alt={`Edit ${index + 1}`}
                 className="w-full h-full object-cover"
@@ -688,7 +687,7 @@ export default function Main() {
 
   // Expose a global helper to open a record by email
   useEffect(() => {
-    ;(window as any).openRecordByEmail = async (email: string, preferredModelRunId?: string) => {
+    (window as Window & { openRecordByEmail?: (email: string, preferredModelRunId?: string) => void }).openRecordByEmail = async (email: string, preferredModelRunId?: string) => {
       try {
         // Ensure card data is loaded
         if (viewMode !== 'card') setViewMode('card')
@@ -721,9 +720,9 @@ export default function Main() {
     }
 
     return () => {
-      delete (window as any).openRecordByEmail
+      delete (window as Window & { openRecordByEmail?: (email: string, preferredModelRunId?: string) => void }).openRecordByEmail
     }
-  }, [cardData, viewMode])
+  }, [cardData, viewMode, fetchCardViewData, goToCard])
 
   const updateJobInput = (recordId: string, input: string) => {
     setJobStates(prev => ({
@@ -790,7 +789,7 @@ export default function Main() {
     const jobInput = jobStates[recordId]?.input || 'hello'
     
     // Add job to global job manager
-    const jobManager = (window as any).jobManager
+    const jobManager = (window as { jobManager?: { addJob: (input: string, source: string) => string; updateJobStatus: (id: string, status: 'pending' | 'running' | 'completed' | 'failed', result?: unknown) => void } }).jobManager
     const jobId = jobManager?.addJob(jobInput, `Card ${currentCardIndex + 1}`)
     
     // Update local job state to running
@@ -806,7 +805,7 @@ export default function Main() {
     }))
 
     // Update global job manager
-    if (jobManager) {
+    if (jobManager && jobId) {
       jobManager.updateJobStatus(jobId, 'running')
     }
 
@@ -821,7 +820,7 @@ export default function Main() {
         }
       )
       
-      const result = await response.json()
+      const result: unknown = await response.json()
       
       // Update local job state with result
       setJobStates(prev => ({
@@ -834,7 +833,7 @@ export default function Main() {
       }))
 
       // Update global job manager
-      if (jobManager) {
+      if (jobManager && jobId) {
         jobManager.updateJobStatus(jobId, 'completed', result)
       }
     } catch (error) {
@@ -854,7 +853,7 @@ export default function Main() {
       }))
 
       // Update global job manager
-      if (jobManager) {
+      if (jobManager && jobId) {
         jobManager.updateJobStatus(jobId, 'failed', errorResult)
       }
     }
@@ -1237,6 +1236,13 @@ export default function Main() {
                 </div>
               </div>
 
+              {/* Feedback Notes Row */}
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Feedback Notes</div>
+                <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+                  {currentCard.feedback_notes || 'No feedback provided'}
+                </div>
+              </div>
 
               {/* Images - Two Column Layout */}
               <div className="mb-6" style={{ height: '1500px' }}>
