@@ -888,14 +888,19 @@ export default function Main() {
 
   // Handle flux editor toggle
   const handleFluxEditorToggle = () => {
-    setIsFluxEditorOpen(!isFluxEditorOpen)
+    const opening = !isFluxEditorOpen
+    setIsFluxEditorOpen(opening)
     // Close other editors if they're open
-    if (!isFluxEditorOpen && isGeminiEditorOpen) {
+    if (opening && isGeminiEditorOpen) {
       setIsGeminiEditorOpen(false)
       setGeminiPrompt("")
     }
-    if (!isFluxEditorOpen && isOpenAIEditorOpen) {
+    if (opening && isOpenAIEditorOpen) {
       setIsOpenAIEditorOpen(false)
+    }
+    // Prefill prompt with feedback notes when opening
+    if (opening) {
+      setFluxPrompt(currentCard?.feedback_notes || "")
     }
     // Reset flux state when closing
     if (isFluxEditorOpen) {
@@ -908,17 +913,22 @@ export default function Main() {
 
   // Handle Gemini editor toggle
   const handleGeminiEditorToggle = () => {
-    setIsGeminiEditorOpen(!isGeminiEditorOpen)
+    const opening = !isGeminiEditorOpen
+    setIsGeminiEditorOpen(opening)
     // Close other editors if they're open
-    if (!isGeminiEditorOpen && isFluxEditorOpen) {
+    if (opening && isFluxEditorOpen) {
       setIsFluxEditorOpen(false)
       setFluxPrompt("")
       setMaskDataUrl("")
       setShowMaskOverlay(false)
       clearMask()
     }
-    if (!isGeminiEditorOpen && isOpenAIEditorOpen) {
+    if (opening && isOpenAIEditorOpen) {
       setIsOpenAIEditorOpen(false)
+    }
+    // Prefill prompt with feedback notes when opening
+    if (opening) {
+      setGeminiPrompt(currentCard?.feedback_notes || "")
     }
     // Reset Gemini state when closing
     if (isGeminiEditorOpen) {
@@ -928,20 +938,25 @@ export default function Main() {
 
   // Handle OpenAI editor toggle
   const handleOpenAIEditorToggle = () => {
-    setIsOpenAIEditorOpen(!isOpenAIEditorOpen)
+    const opening = !isOpenAIEditorOpen
+    setIsOpenAIEditorOpen(opening)
     // Close other editors if they're open
-    if (!isOpenAIEditorOpen && isFluxEditorOpen) {
+    if (opening && isFluxEditorOpen) {
       setIsFluxEditorOpen(false)
       setFluxPrompt("")
       setMaskDataUrl("")
       setShowMaskOverlay(false)
       clearMask()
     }
-    if (!isOpenAIEditorOpen && isGeminiEditorOpen) {
+    if (opening && isGeminiEditorOpen) {
       setIsGeminiEditorOpen(false)
       setGeminiPrompt("")
     }
-    // Reset OpenAI state when closing (but keep the default prompt)
+    // Prefill OpenAI prompt with feedback notes when opening
+    if (opening) {
+      setOpenAIPrompt(currentCard?.feedback_notes || "")
+    }
+    // Reset OpenAI state when closing (revert to default prompt)
     if (isOpenAIEditorOpen) {
       setOpenAIPrompt("Your task is to generate an image that adheres to the specified style. Attached are three reference images that exemplify this target style. The last image is a photo reference that dictates the content and subject to be generated. Your goal is to depict the subject in our specified style. Ignore background. The style is chibi sticker. You should aim to depict the photo reference subject in a flattering yet accurate way. Bodies: simplified torsos only (waist-up) like a sticker.")
     }
