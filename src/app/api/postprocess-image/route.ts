@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { put } from '@vercel/blob'
+import { postProcessImage } from '@/lib/images/post-process'
 
 interface PostprocessRequestBody {
   image_url: string
@@ -48,8 +50,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 502 }
       )
     }
+    // Download, post-process via Sharp, and upload to Vercel Blob
+    const processedPng = await postProcessImage(imageUrl, { maxDimension: 940 })
+    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    const filename = `email-postprocess-${ts}.png`
+    const blob = await put(filename, processedPng, {
+      access: 'public',
+      contentType: 'image/png'
+    })
 
-    return NextResponse.json({ success: true, url: imageUrl })
+    return NextResponse.json({ success: true, url: blob.url })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },
@@ -57,5 +67,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 }
+
 
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { globalClientJobQueue } from '@/lib/client-job-queue'
 import { InlineFluxEditor } from '@/components/InlineFluxEditor'
 import { ReactSketchCanvas } from "react-sketch-canvas"
 import { Brush, Eraser, Eye, EyeOff, RotateCcw, Wand2, Sparkles, Zap } from "lucide-react"
@@ -976,30 +977,33 @@ export default function Main() {
     }
     try {
       setIsGenerating(true);
-      const formData = new FormData();
-      formData.append('image_url', currentCard.preprocessed_output_image_url);
-      formData.append('prompt', fluxPrompt.trim());
-      const maskResponse = await fetch(maskDataUrl);
-      const maskBlob = await maskResponse.blob();
-      if (maskBlob.size < 1000) {
-        throw new Error('Mask appears to be empty or too small. Please paint some areas white to create a mask.');
-      }
-      formData.append('mask', maskBlob, 'mask.png');
-      const response = await fetch('/api/kontext-image', { method: 'POST', body: formData });
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `HTTP ${response.status}: Failed to process with FLUX Kontext LoRA`;
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error) errorMessage = errorData.error;
-        } catch {
-          if (errorText) errorMessage = errorText;
+      await globalClientJobQueue.enqueue(`Flux on ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
+        const formData = new FormData();
+        formData.append('image_url', currentCard.preprocessed_output_image_url);
+        formData.append('prompt', fluxPrompt.trim());
+        const maskResponse = await fetch(maskDataUrl);
+        const maskBlob = await maskResponse.blob();
+        if (maskBlob.size < 1000) {
+          throw new Error('Mask appears to be empty or too small. Please paint some areas white to create a mask.');
         }
-        throw new Error(errorMessage);
-      }
-      const result = await response.json();
-      if (!result.success || !result.data?.imageUrl) throw new Error(result.error || 'No processed image URL in response');
-      handleProcessedImage(result.data.imageUrl);
+        formData.append('mask', maskBlob, 'mask.png');
+        const response = await fetch('/api/kontext-image', { method: 'POST', body: formData });
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorMessage = `HTTP ${response.status}: Failed to process with FLUX Kontext LoRA`;
+          try {
+            const errorData = JSON.parse(errorText);
+            if (errorData.error) errorMessage = errorData.error;
+          } catch {
+            if (errorText) errorMessage = errorText;
+          }
+          throw new Error(errorMessage);
+        }
+        const result = await response.json();
+        if (!result.success || !result.data?.imageUrl) throw new Error(result.error || 'No processed image URL in response');
+        handleProcessedImage(result.data.imageUrl);
+        return { imageUrl: result.data.imageUrl } as const
+      })
     } catch (e) {
       console.error('Flux generate error:', e);
       const msg = e instanceof Error ? e.message : 'Failed to process with FLUX Kontext LoRA';
@@ -1020,38 +1024,32 @@ export default function Main() {
     
     try {
       setIsGeminiGenerating(true);
-      const formData = new FormData();
-      formData.append('prompt', geminiPrompt.trim());
-      formData.append('image_urls', currentCard.preprocessed_output_image_url);
-      formData.append('num_images', '1');
-      formData.append('output_format', 'png');
-      
-      const response = await fetch('/api/gemini-25-edit', { 
-        method: 'POST', 
-        body: formData 
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `HTTP ${response.status}: Failed to process with Gemini 2.5`;
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error) errorMessage = errorData.error;
-        } catch {
-          if (errorText) errorMessage = errorText;
+      await globalClientJobQueue.enqueue(`Gemini on ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
+        const formData = new FormData();
+        formData.append('prompt', geminiPrompt.trim());
+        formData.append('image_urls', currentCard.preprocessed_output_image_url);
+        formData.append('num_images', '1');
+        formData.append('output_format', 'png');
+        const response = await fetch('/api/gemini-25-edit', { method: 'POST', body: formData });
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorMessage = `HTTP ${response.status}: Failed to process with Gemini 2.5`;
+          try {
+            const errorData = JSON.parse(errorText);
+            if (errorData.error) errorMessage = errorData.error;
+          } catch {
+            if (errorText) errorMessage = errorText;
+          }
+          throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
-      }
-      
-      const result = await response.json();
-      if (!result.success || !result.data?.images || result.data.images.length === 0) {
-        throw new Error(result.error || 'No processed images in response');
-      }
-      
-      // Use the first generated image
-      const processedImageUrl = result.data.images[0].url;
-      handleProcessedImage(processedImageUrl);
-      
+        const result = await response.json();
+        if (!result.success || !result.data?.images || result.data.images.length === 0) {
+          throw new Error(result.error || 'No processed images in response');
+        }
+        const processedImageUrl = result.data.images[0].url;
+        handleProcessedImage(processedImageUrl);
+        return { imageUrl: processedImageUrl } as const
+      })
     } catch (e) {
       console.error('Gemini generate error:', e);
       const msg = e instanceof Error ? e.message : 'Failed to process with Gemini 2.5';
@@ -1072,83 +1070,71 @@ export default function Main() {
     
     try {
       setIsOpenAIGenerating(true);
-      
-      const requestBody = {
-        inputImages: [
+      await globalClientJobQueue.enqueue(`OpenAI on ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
+        const requestBody = {
+          inputImages: [
+            {
+              type: 'url',
+              data: currentCard.preprocessed_output_image_url
+            }
+          ],
+          prompt: openAIPrompt.trim()
+        } as const
+        const response = await fetch(
+          `https://yqvsxaifoqoohljhidrp.supabase.co/functions/v1/generate-image`,
           {
-            type: 'url',
-            data: currentCard.preprocessed_output_image_url
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
           }
-        ],
-        prompt: openAIPrompt.trim()
-      };
-      
-      const response = await fetch(
-        `https://yqvsxaifoqoohljhidrp.supabase.co/functions/v1/generate-image`,
-        {
+        )
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorMessage = `HTTP ${response.status}: Failed to process with OpenAI`;
+          try {
+            const errorData = JSON.parse(errorText);
+            if (errorData.error) errorMessage = errorData.error;
+          } catch {
+            if (errorText) errorMessage = errorText;
+          }
+          throw new Error(errorMessage);
+        }
+        const result = await response.json();
+        if (!result.success || !result.imageData) {
+          throw new Error(result.error || 'No processed image data in response');
+        }
+        const base64Data = result.imageData
+        const byteCharacters = atob(base64Data)
+        const byteNumbers = new Array(byteCharacters.length)
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i)
+        }
+        const byteArray = new Uint8Array(byteNumbers)
+        const uploadResp = await fetch('/api/upload-image', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
+          body: (() => {
+            const fd = new FormData()
+            const file = new File([byteArray], `openai-result-${Date.now()}.png`, { type: 'image/png' })
+            fd.append('file', file)
+            return fd
+          })()
+        })
+        if (uploadResp.ok) {
+          const uploadData = await uploadResp.json()
+          const uploadedUrl = uploadData?.url
+          if (uploadedUrl) {
+            handleProcessedImage(uploadedUrl)
+            return { imageUrl: uploadedUrl } as const
+          }
         }
-      );
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `HTTP ${response.status}: Failed to process with OpenAI`;
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error) errorMessage = errorData.error;
-        } catch {
-          if (errorText) errorMessage = errorText;
-        }
-        throw new Error(errorMessage);
-      }
-      
-      const result = await response.json();
-      if (!result.success || !result.imageData) {
-        throw new Error(result.error || 'No processed image data in response');
-      }
-      
-      // Convert base64 to buffer and upload to public storage so server can fetch for attachments
-      const base64Data = result.imageData;
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-
-      // Upload to our new upload-image API to obtain a public URL that server can fetch
-      const uploadResp = await fetch('/api/upload-image', {
-        method: 'POST',
-        body: (() => {
-          const fd = new FormData();
-          const file = new File([byteArray], `openai-result-${Date.now()}.png`, { type: 'image/png' });
-          fd.append('file', file);
-          return fd;
-        })()
-      });
-
-      if (uploadResp.ok) {
-        const uploadData = await uploadResp.json();
-        const uploadedUrl = uploadData?.url;
-        if (uploadedUrl) {
-          handleProcessedImage(uploadedUrl);
-        } else {
-          // Fallback: keep local blob if upload failed
-          const blob = new Blob([byteArray], { type: 'image/png' });
-          const localUrl = URL.createObjectURL(blob);
-          handleProcessedImage(localUrl);
-        }
-      } else {
-        // Fallback: keep local blob if upload failed
-        const blob = new Blob([byteArray], { type: 'image/png' });
-        const localUrl = URL.createObjectURL(blob);
-        handleProcessedImage(localUrl);
-      }
+        const blob = new Blob([byteArray], { type: 'image/png' })
+        const localUrl = URL.createObjectURL(blob)
+        handleProcessedImage(localUrl)
+        return { imageUrl: localUrl } as const
+      })
       
     } catch (e) {
       console.error('OpenAI generate error:', e);
@@ -1250,15 +1236,16 @@ export default function Main() {
         ticketNumber: emailData.ticketNumber
       })
 
-      const response = await fetch('/api/send-front-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(emailData),
+      const response = await globalClientJobQueue.enqueue(`Send email ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
+        const r = await fetch('/api/send-front-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(emailData)
+        })
+        return r
       })
 
-      const result = await response.json()
+      const result = await (response as Response).json()
       if (Array.isArray(result?.emailData?.processedUrls)) {
         result.emailData.processedUrls.forEach((u: string, idx: number) => {
           console.log(`🧼 RMBG URL ${idx + 1}:`, u)
@@ -1311,13 +1298,16 @@ export default function Main() {
         ticketNumber: emailData.ticketNumber
       })
 
-      const response = await fetch('/api/send-front-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(emailData)
+      const response = await globalClientJobQueue.enqueue(`Send credit ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
+        const r = await fetch('/api/send-front-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(emailData)
+        })
+        return r
       })
 
-      const result = await response.json()
+      const result = await (response as Response).json()
       if (Array.isArray(result?.emailData?.processedUrls)) {
         result.emailData.processedUrls.forEach((u: string, idx: number) => {
           console.log(`🧼 RMBG URL ${idx + 1}:`, u)
@@ -1874,81 +1864,79 @@ export default function Main() {
                   <div className="flex-1 border border-green-500 rounded-lg overflow-hidden h-full flex justify-center">
                     <div className="border border-gray-300 dark:border-gray-600 h-full flex justify-center" style={{ width: '650px' }}>
                       <div className="border border-orange-500 flex flex-col" style={{ width: '600px' }}>
-                        {/* Image Container - Fixed height */}
-                        <div className="bg-blue-500 w-full p-2.5" style={{ height: '600px' }}>
-                          <div className="bg-gray-200 dark:bg-gray-300 w-full h-full relative">
-                            <div className="w-full h-full flex items-center justify-center">
-                              {currentCard.preprocessed_output_image_url ? (
-                                <div className="relative">
-                                  <img 
-                                    ref={imageRef}
-                                    src={currentCard.preprocessed_output_image_url} 
-                                    alt="Preprocessed output" 
-                                    className="max-w-full max-h-full object-contain"
-                                    onLoad={handleImageLoad}
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none'
+                        {/* Image Container - Enforce exact square size */}
+                        <div className="w-full aspect-square bg-gray-100 dark:bg-gray-300 relative">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            {currentCard.preprocessed_output_image_url ? (
+                              <div className="relative">
+                                <img 
+                                  ref={imageRef}
+                                  src={currentCard.preprocessed_output_image_url} 
+                                  alt="Preprocessed output" 
+                                  className="max-w-full max-h-full object-contain"
+                                  onLoad={handleImageLoad}
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none'
+                                  }}
+                                />
+                                
+                                {/* Drawing Canvas Overlay - only when flux editor is open */}
+                                {isFluxEditorOpen && imageDimensions.width > 0 && (
+                                  <div
+                                    className="absolute top-0 left-0 pointer-events-auto"
+                                    style={{ 
+                                      width: imageDimensions.width, 
+                                      height: imageDimensions.height,
+                                      left: '50%',
+                                      top: '50%',
+                                      transform: 'translate(-50%, -50%)'
                                     }}
-                                  />
-                                  
-                                  {/* Drawing Canvas Overlay - only when flux editor is open */}
-                                  {isFluxEditorOpen && imageDimensions.width > 0 && (
-                                    <div
-                                      className="absolute top-0 left-0 pointer-events-auto"
-                                      style={{ 
-                                        width: imageDimensions.width, 
-                                        height: imageDimensions.height,
-                                        left: '50%',
-                                        top: '50%',
-                                        transform: 'translate(-50%, -50%)'
+                                  >
+                                    <ReactSketchCanvas
+                                      ref={sketchRef}
+                                      style={{ border: 'none', borderRadius: '0px' }}
+                                      width={`${imageDimensions.width}px`}
+                                      height={`${imageDimensions.height}px`}
+                                      strokeWidth={brushSize}
+                                      strokeColor="rgba(34, 197, 94, 0.6)"
+                                      canvasColor="transparent"
+                                      allowOnlyPointerType="all"
+                                      onStroke={generateMaskDataUrl}
+                                    />
+                                  </div>
+                                )}
+                                
+                                {/* Mask Overlay */}
+                                {isFluxEditorOpen && showMaskOverlay && maskDataUrl && imageDimensions.width > 0 && (
+                                  <div
+                                    className="absolute top-0 left-0 pointer-events-none"
+                                    style={{ 
+                                      width: imageDimensions.width, 
+                                      height: imageDimensions.height,
+                                      left: '50%',
+                                      top: '50%',
+                                      transform: 'translate(-50%, -50%)'
+                                    }}
+                                  >
+                                    <img
+                                      src={maskDataUrl}
+                                      alt="Binary mask visualization"
+                                      className="object-contain opacity-70"
+                                      style={{
+                                        width: `${imageDimensions.width}px`,
+                                        height: `${imageDimensions.height}px`,
+                                        mixBlendMode: 'multiply',
+                                        filter: 'hue-rotate(240deg) saturate(1.5)'
                                       }}
-                                    >
-                                      <ReactSketchCanvas
-                                        ref={sketchRef}
-                                        style={{ border: 'none', borderRadius: '0px' }}
-                                        width={`${imageDimensions.width}px`}
-                                        height={`${imageDimensions.height}px`}
-                                        strokeWidth={brushSize}
-                                        strokeColor="rgba(34, 197, 94, 0.6)"
-                                        canvasColor="transparent"
-                                        allowOnlyPointerType="all"
-                                        onStroke={generateMaskDataUrl}
-                                      />
-                                    </div>
-                                  )}
-                                  
-                                  {/* Mask Overlay */}
-                                  {isFluxEditorOpen && showMaskOverlay && maskDataUrl && imageDimensions.width > 0 && (
-                                    <div
-                                      className="absolute top-0 left-0 pointer-events-none"
-                                      style={{ 
-                                        width: imageDimensions.width, 
-                                        height: imageDimensions.height,
-                                        left: '50%',
-                                        top: '50%',
-                                        transform: 'translate(-50%, -50%)'
-                                      }}
-                                    >
-                                      <img
-                                        src={maskDataUrl}
-                                        alt="Binary mask visualization"
-                                        className="object-contain opacity-70"
-                                        style={{
-                                          width: `${imageDimensions.width}px`,
-                                          height: `${imageDimensions.height}px`,
-                                          mixBlendMode: 'multiply',
-                                          filter: 'hue-rotate(240deg) saturate(1.5)'
-                                        }}
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="text-gray-500 dark:text-gray-600 text-sm">
-                                  No preprocessed image
-                                </div>
-                              )}
-                            </div>
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-gray-500 dark:text-gray-600 text-sm">
+                                No preprocessed image
+                              </div>
+                            )}
                           </div>
                         </div>
                         
@@ -2151,6 +2139,23 @@ export default function Main() {
                             </div>
                           </div>
                         )}
+
+                        {/* Original Input Image - Below all tool sections */}
+                        {currentCard.input_image_url && (
+                          <div className="w-full mt-3">
+                            <div className="text-xs text-gray-600 mb-2">Original Input</div>
+                            <div className="w-full aspect-square bg-white border border-gray-300 rounded overflow-hidden">
+                              <img 
+                                src={currentCard.input_image_url}
+                                alt="Original input"
+                                className="w-full h-full object-contain"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2164,13 +2169,24 @@ export default function Main() {
                     <div className="border border-gray-300 dark:border-gray-600 h-full flex justify-center" style={{ width: '650px' }}>
                       <div className="border border-orange-500 flex flex-col overflow-hidden" style={{ width: '600px' }}>
                         {/* Image History - Scrollable list with most recent first */}
-                        <div className="bg-gray-200 dark:bg-gray-300 w-full h-full overflow-y-auto p-2">
+                        <div className="bg-gray-200 dark:bg-gray-300 w-full h-full overflow-y-auto">
                           {currentCard.image_history && currentCard.image_history.length > 0 ? (
                             <div className="space-y-2">
                               {currentCard.image_history.map((imageUrl, index) => (
                                 <div key={`${imageUrl}-${index}`} className="relative">
-                                  <div className="bg-white rounded-lg p-2 shadow-sm border">
-                                    <div className="flex items-center justify-between mb-2">
+                                  <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                                    <div className="w-full aspect-square bg-gray-100">
+                                      <img 
+                                        src={imageUrl} 
+                                        alt={`Edit ${index + 1}`} 
+                                        className="w-full h-full object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                                        onClick={() => window.open(imageUrl, '_blank')}
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none'
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="h-[60px] w-full flex items-center justify-between px-2 border-t bg-white">
                                       <span className="text-xs font-medium text-gray-600">
                                         {getToolLabel(imageUrl)}
                                       </span>
@@ -2189,17 +2205,6 @@ export default function Main() {
                                           <span className="ml-1 text-xs text-gray-600">Email</span>
                                         </label>
                                       </div>
-                                    </div>
-                                    <div className="w-full aspect-square bg-gray-100 rounded overflow-hidden">
-                                      <img 
-                                        src={imageUrl} 
-                                        alt={`Edit ${index + 1}`} 
-                                        className="w-full h-full object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                                        onClick={() => window.open(imageUrl, '_blank')}
-                                        onError={(e) => {
-                                          e.currentTarget.style.display = 'none'
-                                        }}
-                                      />
                                     </div>
                                   </div>
                                 </div>

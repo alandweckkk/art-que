@@ -103,7 +103,7 @@ export default function GlobalSearch({ onSelect }: GlobalSearchProps) {
         </div>
       </div>
       {isOpen && results.length > 0 && (
-        <div className="absolute mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50 max-h-64 overflow-auto">
+        <div className="absolute mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50 max-h-64 overflow-auto no-scrollbar">
           {results.map((r) => (
             <button
               key={`${r.user_id}-${r.latest_model_run_id || 'none'}`}
