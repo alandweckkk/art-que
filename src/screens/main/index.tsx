@@ -717,6 +717,15 @@ export default function Main() {
     return 'Standard'
   }
 
+  // Infer which tool created an edit based on the stored image URL/filename
+  const getToolLabel = (imageUrl: string): string => {
+    const lower = (imageUrl || '').toLowerCase()
+    if (lower.includes('kontext') || lower.includes('flux')) return 'Flux Inpainting'
+    if (lower.includes('gemini-25')) return 'Gemini 2.5'
+    if (lower.includes('uploaded-image') || lower.includes('openai')) return 'OpenAI'
+    return 'Edit'
+  }
+
   const getBucketColor = (bucket: string) => {
     switch (bucket) {
       case 'Urgent': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
@@ -2138,7 +2147,7 @@ export default function Main() {
                                   <div className="bg-white rounded-lg p-2 shadow-sm border">
                                     <div className="flex items-center justify-between mb-2">
                                       <span className="text-xs font-medium text-gray-600">
-                                        {index === 0 ? 'Latest Edit' : `Edit ${index + 1}`}
+                                        {getToolLabel(imageUrl)}
                                       </span>
                                       <div className="flex items-center space-x-2">
                                         <span className="text-xs text-gray-400">
