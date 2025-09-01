@@ -88,6 +88,7 @@ export default function Main() {
   // Email functionality state
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [isSendingCreditEmail, setIsSendingCreditEmail] = useState(false)
 
   // Flux editing helper functions
   const scaleMaskToNaturalSize = useCallback(async (displayMaskDataUrl: string) => {
@@ -1254,6 +1255,56 @@ export default function Main() {
     }
   }
 
+  const sendCreditAndEmail = async () => {
+    if (!currentCard) return
+    try {
+      setIsSendingCreditEmail(true)
+
+      const emailData = {
+        ticketId: currentCard.sticker_edit_id,
+        ticketNumber: currentCard.model_run_id,
+        customerEmail: currentCard.customer_email,
+        customerName: currentCard.customer_name,
+        feedback: currentCard.feedback_notes,
+        correctionType: 'credit-issued',
+        originalImageUrl: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        correctedImageUrls: selectedImages, // allow optional attachments if selected
+        isDraft: false,
+        sendToCustomer: true,
+        supportTeamName: 'MakeMeASticker.com',
+        supportEmail: 'support@makemeasticker.com',
+        emailMode: 'credit'
+      } as const
+
+      console.log('📧 Sending credit email with data:', {
+        customerEmail: emailData.customerEmail,
+        selectedImages: selectedImages.length,
+        ticketNumber: emailData.ticketNumber
+      })
+
+      const response = await fetch('/api/send-front-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(emailData)
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        alert(`Credit email sent to ${currentCard.customer_email}!\n\nMessage ID: ${result.messageId}`)
+        clearImageSelection()
+        console.log('✅ Credit email sent:', result)
+      } else {
+        console.error('❌ Credit email failed:', result.error)
+        alert(`Failed to send credit email: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('💥 Error sending credit email:', error)
+      alert(`Error sending credit email: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsSendingCreditEmail(false)
+    }
+  }
+
   const submitJob = async (recordId: string) => {
     const jobInput = jobStates[recordId]?.input || 'hello'
     
@@ -1731,6 +1782,26 @@ export default function Main() {
                       </div>
                     )}
                     
+                    {/* Give Credit and Email Button */}
+                    <button
+                      onClick={sendCreditAndEmail}
+                      disabled={isSendingCreditEmail}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isSendingCreditEmail
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-amber-600 text-white hover:bg-amber-700 shadow-sm'
+                      }`}
+                    >
+                      {isSendingCreditEmail ? (
+                        <span className="inline-flex items-center">
+                          <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-2"></span>
+                          Sending...
+                        </span>
+                      ) : (
+                        'Give Credit and Email'
+                      )}
+                    </button>
+
                     {/* Send Fixed Artwork Button */}
                     <button
                       onClick={sendFixedArtwork}

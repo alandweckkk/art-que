@@ -52,10 +52,32 @@ Alan & MakeMeASticker.com<br><br>`;
   }
 
   /**
+   * Generates the credit email template
+   * Used when we can't fix the sticker and issue a free credit
+   */
+  static generateCreditEmail(_data: TemplateData): EmailTemplate {
+    const subject = "We've Added a Free Credit to Your Account";
+    const body = `Hey there!<br><br>
+
+We're sorry we couldn't fix your sticker this time. We've added a free credit to your account.<br><br>
+
+If you have any questions or suggestions to make our product better, we're happy to help!<br><br>
+
+Best regards,<br>
+Alan & MakeMeASticker.com<br><br>`;
+
+    return {
+      subject,
+      body
+    };
+  }
+
+  /**
    * Validates template data to ensure all required fields are present
    */
-  static validateTemplateData(data: TemplateData): TemplateValidation {
+  static validateTemplateData(data: TemplateData, options?: { requireCorrectedImages?: boolean }): TemplateValidation {
     const errors: string[] = [];
+    const requireCorrectedImages = options?.requireCorrectedImages !== false;
 
     // Required fields
     if (!data.ticketNumber) {
@@ -70,8 +92,10 @@ Alan & MakeMeASticker.com<br><br>`;
     if (!data.originalImageUrl) {
       errors.push('originalImageUrl is required');
     }
-    if (!data.correctedImageUrls || data.correctedImageUrls.length === 0) {
-      errors.push('correctedImageUrls must contain at least one URL');
+    if (requireCorrectedImages) {
+      if (!data.correctedImageUrls || data.correctedImageUrls.length === 0) {
+        errors.push('correctedImageUrls must contain at least one URL');
+      }
     }
 
     // Validate URLs if present
@@ -80,7 +104,7 @@ Alan & MakeMeASticker.com<br><br>`;
       errors.push('originalImageUrl must be a valid HTTP/HTTPS URL');
     }
 
-    if (data.correctedImageUrls) {
+    if (data.correctedImageUrls && data.correctedImageUrls.length > 0) {
       data.correctedImageUrls.forEach((url, index) => {
         if (!urlPattern.test(url)) {
           errors.push(`correctedImageUrls[${index}] must be a valid HTTP/HTTPS URL`);

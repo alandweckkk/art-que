@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import FrontAPIClient from '@/lib/front';
 import EmailTemplateService from '@/lib/email-templates';
+import { supabase } from '@/lib/supabase';
 
 interface SendEmailRequest {
   ticketId: string;
@@ -15,6 +16,7 @@ interface SendEmailRequest {
   sendToCustomer?: boolean;
   supportEmail?: string;
   supportTeamName?: string;
+  emailMode?: 'correction' | 'credit';
 }
 
 interface SendEmailResponse {
@@ -27,6 +29,11 @@ interface SendEmailResponse {
     body: string;
     attachments?: number;
   };
+  credit?: {
+    granted?: boolean;
+    creditLedgerId?: string;
+    error?: string;
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<SendEmailResponse>> {
@@ -82,7 +89,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       supportEmail: body.supportEmail
     };
 
-    const validation = EmailTemplateService.validateTemplateData(templateData);
+    const validation = EmailTemplateService.validateTemplateData(templateData, {
+      requireCorrectedImages: body.emailMode === 'credit' ? false : true
+    });
     if (!validation.valid) {
       return NextResponse.json(
         { 
@@ -109,9 +118,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
     }
 
     // Generate email template
-    const emailTemplate = body.isDraft 
+    const emailTemplate = body.isDraft
       ? EmailTemplateService.generateDraftEmail(templateData)
-      : EmailTemplateService.generateCorrectionEmail(templateData);
+      : body.emailMode === 'credit'
+        ? EmailTemplateService.generateCreditEmail(templateData)
+        : EmailTemplateService.generateCorrectionEmail(templateData);
 
     console.log('📧 Generated email template:', {
       subject: emailTemplate.subject,
@@ -129,11 +140,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
     const attachments: Array<{ filename: string; contentType: string; data: Buffer }> = [];
 
     try {
-      // Skip original image attachment - only include corrected images
-      
-      // Add corrected image attachments
+      // Add corrected image attachments (optional for credit mode)
       console.log('📥 Processing corrected images...');
-      for (let i = 0; i < body.correctedImageUrls.length; i++) {
+      for (let i = 0; i < (body.correctedImageUrls?.length || 0); i++) {
         const correctedUrl = body.correctedImageUrls[i];
         const total = body.correctedImageUrls.length;
         const filename = (total === 1 || i === 0)
@@ -141,36 +150,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
           : `corrected-image-${i + 1}.png`;
         
         console.log(`📥 Processing corrected image ${i + 1}: ${correctedUrl.substring(0, 50)}...`);
-        
         const correctedAttachment = await frontClient.prepareImageAttachment(
           correctedUrl,
           filename
         );
-        
-        if (correctedAttachment) {
-          attachments.push(correctedAttachment);
-          console.log(`✅ Corrected image ${i + 1} attachment prepared`);
-        } else {
-          console.warn(`⚠️ Failed to prepare corrected image attachment ${i + 1}`);
-        }
+        if (correctedAttachment) attachments.push(correctedAttachment);
       }
-
-      console.log('📎 Prepared attachments summary:', {
-        total: attachments.length,
-        corrected: attachments.length
-      });
+      console.log('📎 Prepared attachments summary:', { total: attachments.length });
     } catch (attachmentError) {
       console.error('💥 Error preparing attachments:', attachmentError);
-      // Continue without attachments for now
-    }
-
-    // Check email body size
-    const bodySize = Buffer.byteLength(emailTemplate.body, 'utf8');
-    console.log('📏 Email body size:', bodySize, 'bytes');
-    
-    if (bodySize > 100000) { // 100KB limit for email body
-      console.warn('⚠️ Email body is very large:', bodySize, 'bytes');
-      console.log('📝 Body preview:', emailTemplate.body.substring(0, 500) + '...');
     }
 
     // Prepare email data
@@ -182,29 +170,49 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       attachments: attachments.length > 0 ? attachments : undefined
     };
 
-    console.log('📧 Final email data:', {
-      to: emailData.to,
-      subject: emailData.subject,
-      bodyLength: emailData.body.length,
-      hasAttachments: !!emailData.attachments
-    });
-
     // Send email or create draft
-    let result;
-    if (body.isDraft || !body.sendToCustomer) {
-      console.log('📝 Creating Front draft...');
-      result = await frontClient.createDraft(emailData);
-    } else {
-      console.log('📤 Sending Front message...');
-      result = await frontClient.sendMessage(emailData);
-    }
+    const result = (body.isDraft || !body.sendToCustomer)
+      ? await frontClient.createDraft(emailData)
+      : await frontClient.sendMessage(emailData);
 
     if (result.success) {
-      console.log('✅ Front operation completed successfully:', {
-        messageId: result.message_id,
-        messageUid: result.message_uid,
-        operation: body.isDraft ? 'draft' : 'send'
-      });
+      let creditResult: { granted?: boolean; creditLedgerId?: string; error?: string } | undefined;
+
+      if (body.emailMode === 'credit') {
+        try {
+          const creditAmount = 1;
+          const emailLower = (body.customerEmail || '').toLowerCase();
+          // Look up user_id by email from users_populated
+          const { data: userRows, error: userErr } = await supabase
+            .from('users_populated')
+            .select('id, email')
+            .ilike('email', emailLower)
+            .limit(1);
+
+          const userId = userRows?.[0]?.id as string | undefined;
+          if (!userId || userErr) {
+            creditResult = { granted: false, error: userErr?.message || 'User not found for email' };
+          } else {
+            const { data: insertRows, error: insertErr } = await supabase
+              .from('credit_ledger')
+              .insert({
+                user_id: userId,
+                amount: creditAmount,
+                type: 'credit',
+                metadata: { source: 'assistant', reason: 'credit_email', ticket_id: body.ticketId, ticket_number: body.ticketNumber }
+              })
+              .select('id')
+              .limit(1);
+            if (insertErr) {
+              creditResult = { granted: false, error: insertErr.message };
+            } else {
+              creditResult = { granted: true, creditLedgerId: insertRows?.[0]?.id };
+            }
+          }
+        } catch (creditError) {
+          creditResult = { granted: false, error: creditError instanceof Error ? creditError.message : 'Unknown credit error' };
+        }
+      }
 
       return NextResponse.json({
         success: true,
@@ -214,24 +222,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
           subject: emailTemplate.subject,
           body: emailTemplate.body,
           attachments: attachments.length
-        }
+        },
+        credit: creditResult
       });
     } else {
-      console.error('❌ Front operation failed:', result.error);
       return NextResponse.json(
-        { 
-          success: false, 
-          error: result.error,
-          emailData: {
-            subject: emailTemplate.subject,
-            body: emailTemplate.body,
-            attachments: attachments.length
-          }
-        },
+        { success: false, error: result.error },
         { status: 500 }
       );
     }
-
   } catch (error) {
     console.error('💥 Error in send-front-email API:', error);
     return NextResponse.json(
@@ -244,10 +243,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
   }
 }
 
-// GET endpoint for testing Front API configuration
 export async function GET(): Promise<NextResponse> {
   try {
-    // Test Front API configuration
     const config = {
       hasApiToken: !!process.env.FRONT_API_TOKEN,
       hasChannelId: !!process.env.FRONT_CHANNEL_ID,
