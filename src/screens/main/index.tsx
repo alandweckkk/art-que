@@ -1087,7 +1087,7 @@ export default function Main() {
         throw new Error(result.error || 'No processed image data in response');
       }
       
-      // Convert base64 to blob URL for display
+      // Convert base64 to buffer and upload to public storage so server can fetch for attachments
       const base64Data = result.imageData;
       const byteCharacters = atob(base64Data);
       const byteNumbers = new Array(byteCharacters.length);
@@ -1095,11 +1095,35 @@ export default function Main() {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
       const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'image/png' });
-      const imageUrl = URL.createObjectURL(blob);
-      
-      // For now, we'll use the blob URL - in production you might want to upload to storage
-      handleProcessedImage(imageUrl);
+
+      // Upload to our new upload-image API to obtain a public URL that server can fetch
+      const uploadResp = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: (() => {
+          const fd = new FormData();
+          const file = new File([byteArray], `openai-result-${Date.now()}.png`, { type: 'image/png' });
+          fd.append('file', file);
+          return fd;
+        })()
+      });
+
+      if (uploadResp.ok) {
+        const uploadData = await uploadResp.json();
+        const uploadedUrl = uploadData?.url;
+        if (uploadedUrl) {
+          handleProcessedImage(uploadedUrl);
+        } else {
+          // Fallback: keep local blob if upload failed
+          const blob = new Blob([byteArray], { type: 'image/png' });
+          const localUrl = URL.createObjectURL(blob);
+          handleProcessedImage(localUrl);
+        }
+      } else {
+        // Fallback: keep local blob if upload failed
+        const blob = new Blob([byteArray], { type: 'image/png' });
+        const localUrl = URL.createObjectURL(blob);
+        handleProcessedImage(localUrl);
+      }
       
     } catch (e) {
       console.error('OpenAI generate error:', e);
@@ -1307,31 +1331,55 @@ export default function Main() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="mx-auto" style={{ maxWidth: '1700px' }}>
-        {/* View Toggle */}
-        <div className="mb-8 flex justify-center">
-          <div className="flex bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm border border-gray-200 dark:border-gray-700">
-            <button
-              onClick={() => setViewMode('card')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'card'
-                  ? 'bg-blue-500 text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              Card View
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'table'
-                  ? 'bg-blue-500 text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              Table View
-            </button>
+        {/* View Toggle (only show here for table view). Card view toggle is embedded in header. */}
+        {viewMode === 'table' && (
+          <div className="mb-4 grid grid-cols-3 items-center">
+            {/* Left: pagination text */}
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, totalRecords)} of {totalRecords} records
+            </div>
+            {/* Center: toggle */}
+            <div className="flex justify-center">
+              <div className="flex bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                <button
+                  onClick={() => setViewMode('card')}
+                  className="px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                >
+                  Card View
+                </button>
+                <button
+                  onClick={() => setViewMode('table')}
+                  className="px-4 py-2 rounded-md text-sm font-medium transition-colors bg-blue-500 text-white shadow-sm"
+                >
+                  Table View
+                </button>
+              </div>
+            </div>
+            {/* Right: prev/next */}
+            <div className="flex justify-end items-center gap-2">
+              <button
+                onClick={goToPrevPage}
+                disabled={currentPage === 1}
+                className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                <span>Previous</span>
+              </button>
+              <button
+                onClick={goToNextPage}
+                disabled={currentPage >= Math.ceil(totalRecords / pageSize)}
+                className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+              >
+                <span>Next</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Loading State */}
         {loading ? (
@@ -1348,35 +1396,7 @@ export default function Main() {
           viewMode === 'table' ? (
           /* Table Container */
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
-            {/* Pagination Controls */}
-            <div className="bg-gray-50 dark:bg-gray-700 px-6 py-4 border-b border-gray-200 dark:border-gray-600">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
-                    Page <span className="font-semibold">{currentPage}</span> of <span className="font-semibold">{Math.ceil(totalRecords / pageSize)}</span>
-                  </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, totalRecords)} of {totalRecords} records
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={goToPrevPage}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1 text-sm bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md hover:bg-gray-50 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={goToNextPage}
-                    disabled={currentPage >= Math.ceil(totalRecords / pageSize)}
-                    className="px-3 py-1 text-sm bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md hover:bg-gray-50 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
+            {/* Pagination moved to unified header above */}
             <div className="overflow-x-auto">
             <table className="w-full">
               {/* Table Header */}
@@ -1615,20 +1635,35 @@ export default function Main() {
         ) : (
           /* Card View */
           <div className="w-full">
-            {/* Navigation Header */}
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center space-x-4">
+            {/* Card Header Row: Left (card index + back), Center (toggle), Right (prev/next) */}
+            <div className="mb-4 grid grid-cols-3 items-center">
+              {/* Left */}
+              <div className="flex items-center gap-4">
                 <div className="text-sm text-gray-500 dark:text-gray-400">
-                  Card {globalCardIndex + 1} of {cardData.length || totalRecords}
+                 {globalCardIndex + 1} of {cardData.length || totalRecords}
                 </div>
-                <button
-                  onClick={() => setViewMode('table')}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline"
-                >
-                  ← Back to Table (Row {currentCardIndex + 1})
-                </button>
               </div>
-              <div className="flex space-x-2">
+
+              {/* Center */}
+              <div className="flex justify-center">
+                <div className="flex bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                  <button
+                    onClick={() => setViewMode('card')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors bg-blue-500 text-white shadow-sm`}
+                  >
+                    Card View
+                  </button>
+                  <button
+                    onClick={() => setViewMode('table')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white`}
+                  >
+                    Table View
+                  </button>
+                </div>
+              </div>
+
+              {/* Right */}
+              <div className="flex justify-end items-center gap-2">
                 <button
                   onClick={prevCard}
                   disabled={currentCardIndex === 0 || cardLoading}

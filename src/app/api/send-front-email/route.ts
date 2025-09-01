@@ -126,7 +126,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
     });
 
     // Prepare image attachments
-    const attachments = [];
+    const attachments: Array<{ filename: string; contentType: string; data: Buffer }> = [];
 
     try {
       // Skip original image attachment - only include corrected images
@@ -135,8 +135,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       console.log('📥 Processing corrected images...');
       for (let i = 0; i < body.correctedImageUrls.length; i++) {
         const correctedUrl = body.correctedImageUrls[i];
-        const filename = body.correctedImageUrls.length === 1 
-          ? 'corrected-image.png' 
+        const total = body.correctedImageUrls.length;
+        const filename = (total === 1 || i === 0)
+          ? 'corrected-image.png'
           : `corrected-image-${i + 1}.png`;
         
         console.log(`📥 Processing corrected image ${i + 1}: ${correctedUrl.substring(0, 50)}...`);

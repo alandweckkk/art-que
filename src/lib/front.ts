@@ -5,10 +5,11 @@ interface FrontConfig {
   baseUrl?: string;
 }
 
-interface FrontAttachment {
+// Internal representation for prepared attachments used when constructing multipart/form-data
+interface PreparedAttachment {
   filename: string;
-  content_type: string;
-  content: string; // base64 encoded
+  contentType: string;
+  data: Buffer;
 }
 
 interface FrontEmailData {
@@ -16,7 +17,7 @@ interface FrontEmailData {
   subject: string;
   body: string;
   body_format: 'html' | 'text';
-  attachments?: FrontAttachment[];
+  attachments?: PreparedAttachment[];
 }
 
 interface FrontApiResponse {
@@ -62,7 +63,8 @@ export default class FrontAPIClient {
       'Accept': 'application/json'
     };
 
-    if (method !== 'GET' && data) {
+    // Only set JSON content type when sending JSON (not FormData)
+    if (method !== 'GET' && data && !(typeof FormData !== 'undefined' && data instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
     }
 
@@ -72,7 +74,11 @@ export default class FrontAPIClient {
       const response = await fetch(url, {
         method,
         headers,
-        body: data ? JSON.stringify(data) : undefined
+        body: data
+          ? (typeof FormData !== 'undefined' && data instanceof FormData)
+            ? (data as unknown as FormData)
+            : JSON.stringify(data)
+          : undefined
       });
 
       const responseText = await response.text();
@@ -102,10 +108,41 @@ export default class FrontAPIClient {
     }
   }
 
-  async prepareImageAttachment(imageUrl: string, filename: string): Promise<FrontAttachment | null> {
+  async prepareImageAttachment(imageUrl: string, filename: string): Promise<PreparedAttachment | null> {
     try {
+      // Handle data URLs directly
+      if (imageUrl.startsWith('data:')) {
+        const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) {
+          console.warn('⚠️ Unsupported data URL format for attachment');
+          return null;
+        }
+        const contentType = match[1] || 'image/png';
+        const base64Part = match[2];
+        const dataBuffer = Buffer.from(base64Part, 'base64');
+
+        // 25MB limit
+        const maxBytes = 25 * 1024 * 1024;
+        if (dataBuffer.byteLength > maxBytes) {
+          console.warn(`⚠️ Attachment exceeds 25MB (${dataBuffer.byteLength} bytes): ${filename}`);
+          return null;
+        }
+
+        console.log(`✅ Data URL attachment prepared: ${filename} (${dataBuffer.byteLength} bytes, ${contentType})`);
+        return {
+          filename,
+          contentType,
+          data: dataBuffer
+        };
+      }
+
+      if (imageUrl.startsWith('blob:')) {
+        console.warn('⚠️ Cannot fetch blob: URLs server-side. Upload to public URL first.');
+        return null;
+      }
+
       console.log(`📥 Downloading image for attachment: ${imageUrl.substring(0, 50)}...`);
-      
+
       const response = await fetch(imageUrl);
       if (!response.ok) {
         console.error(`❌ Failed to download image: HTTP ${response.status}`);
@@ -113,8 +150,15 @@ export default class FrontAPIClient {
       }
 
       const arrayBuffer = await response.arrayBuffer();
-      const base64Content = Buffer.from(arrayBuffer).toString('base64');
-      
+      const dataBuffer = Buffer.from(arrayBuffer);
+
+      // 25MB limit
+      const maxBytes = 25 * 1024 * 1024;
+      if (dataBuffer.byteLength > maxBytes) {
+        console.warn(`⚠️ Attachment exceeds 25MB (${dataBuffer.byteLength} bytes): ${filename}`);
+        return null;
+      }
+
       // Determine content type from URL or default to PNG
       let contentType = 'image/png';
       if (imageUrl.includes('.jpg') || imageUrl.includes('.jpeg')) {
@@ -125,12 +169,12 @@ export default class FrontAPIClient {
         contentType = 'image/webp';
       }
 
-      console.log(`✅ Image attachment prepared: ${filename} (${arrayBuffer.byteLength} bytes, ${contentType})`);
+      console.log(`✅ Image attachment prepared: ${filename} (${dataBuffer.byteLength} bytes, ${contentType})`);
 
       return {
         filename,
-        content_type: contentType,
-        content: base64Content
+        contentType,
+        data: dataBuffer
       };
     } catch (error) {
       console.error(`💥 Error preparing image attachment for ${imageUrl}:`, error);
@@ -148,25 +192,48 @@ export default class FrontAPIClient {
         attachments: emailData.attachments?.length || 0
       });
 
-      const payload = {
-        to: emailData.to,
-        subject: emailData.subject,
-        body: emailData.body,
-        body_format: emailData.body_format,
-        ...(emailData.attachments && { attachments: emailData.attachments })
-      };
+      let responseData: { id: string; uid: string };
+      if (emailData.attachments && emailData.attachments.length > 0) {
+        // Use multipart/form-data when attachments are present
+        const formData = new FormData();
+        emailData.to.forEach(to => formData.append('to[]', to));
+        formData.append('subject', emailData.subject);
+        formData.append('body', emailData.body);
+        formData.append('body_format', emailData.body_format);
 
-      const response = await this.makeRequest(
-        `/channels/${this.config.channelId}/messages`,
-        'POST',
-        payload
-      ) as { id: string; uid: string };
+        for (const attachment of emailData.attachments) {
+          const uint8 = new Uint8Array(attachment.data);
+          const blob = new Blob([uint8], { type: attachment.contentType });
+          // Use attachments[] as field name per Front docs
+          formData.append('attachments[]', blob, attachment.filename);
+        }
+
+        responseData = await this.makeRequest(
+          `/channels/${this.config.channelId}/messages`,
+          'POST',
+          formData
+        ) as { id: string; uid: string };
+      } else {
+        // JSON path without attachments
+        const payload = {
+          to: emailData.to,
+          subject: emailData.subject,
+          body: emailData.body,
+          body_format: emailData.body_format
+        };
+
+        responseData = await this.makeRequest(
+          `/channels/${this.config.channelId}/messages`,
+          'POST',
+          payload
+        ) as { id: string; uid: string };
+      }
 
       return {
         success: true,
-        message_id: response.id,
-        message_uid: response.uid,
-        details: response
+        message_id: responseData.id,
+        message_uid: responseData.uid,
+        details: responseData
       };
     } catch (error) {
       console.error('💥 Error sending Front message:', error);
@@ -187,27 +254,49 @@ export default class FrontAPIClient {
         attachments: emailData.attachments?.length || 0
       });
 
-      // For drafts, we create a draft message in the channel
-      const payload = {
-        to: emailData.to,
-        subject: emailData.subject,
-        body: emailData.body,
-        body_format: emailData.body_format,
-        is_draft: true,
-        ...(emailData.attachments && { attachments: emailData.attachments })
-      };
+      let responseData: { id: string; uid: string };
+      if (emailData.attachments && emailData.attachments.length > 0) {
+        // multipart/form-data for drafts with attachments
+        const formData = new FormData();
+        emailData.to.forEach(to => formData.append('to[]', to));
+        formData.append('subject', emailData.subject);
+        formData.append('body', emailData.body);
+        formData.append('body_format', emailData.body_format);
+        formData.append('is_draft', 'true');
 
-      const response = await this.makeRequest(
-        `/channels/${this.config.channelId}/drafts`,
-        'POST',
-        payload
-      ) as { id: string; uid: string };
+        for (const attachment of emailData.attachments) {
+          const uint8 = new Uint8Array(attachment.data);
+          const blob = new Blob([uint8], { type: attachment.contentType });
+          formData.append('attachments[]', blob, attachment.filename);
+        }
+
+        responseData = await this.makeRequest(
+          `/channels/${this.config.channelId}/drafts`,
+          'POST',
+          formData
+        ) as { id: string; uid: string };
+      } else {
+        // JSON path without attachments
+        const payload = {
+          to: emailData.to,
+          subject: emailData.subject,
+          body: emailData.body,
+          body_format: emailData.body_format,
+          is_draft: true
+        };
+
+        responseData = await this.makeRequest(
+          `/channels/${this.config.channelId}/drafts`,
+          'POST',
+          payload
+        ) as { id: string; uid: string };
+      }
 
       return {
         success: true,
-        message_id: response.id,
-        message_uid: response.uid,
-        details: response
+        message_id: responseData.id,
+        message_uid: responseData.uid,
+        details: responseData
       };
     } catch (error) {
       console.error('💥 Error creating Front draft:', error);

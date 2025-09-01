@@ -1,20 +1,26 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 export default function HelpTooltip() {
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   const openModal = () => setIsModalOpen(true)
   const closeModal = () => setIsModalOpen(false)
 
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   return (
     <>
-      {/* Tooltip Button - Fixed position in top-left */}
-      <div className="fixed top-2.5 left-2.5 z-50">
+      {/* Tooltip Button - Positioned in header */}
+      <div className="flex items-center">
         <button
           onClick={openModal}
-          className="w-10 h-10 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg transition-colors duration-200 flex items-center justify-center group"
+          className="w-8 h-8 bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-md transition-colors duration-200 flex items-center justify-center group"
           title="Help & Information"
         >
           {/* Question mark icon */}
@@ -34,9 +40,9 @@ export default function HelpTooltip() {
         </button>
       </div>
 
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+      {/* Modal (rendered in a portal to avoid clipping) */}
+      {isModalOpen && mounted && createPortal(
+        <div className="fixed inset-0 z-[9999] overflow-y-auto">
           {/* Backdrop */}
           <div 
             className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
@@ -147,7 +153,8 @@ export default function HelpTooltip() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
