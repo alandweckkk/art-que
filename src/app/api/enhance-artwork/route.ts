@@ -10,6 +10,11 @@ export async function POST(request: NextRequest) {
   try {
     const { model_run_id } = await request.json();
     
+    // Get the base URL for internal API calls
+    const baseUrl = request.url.includes('localhost') 
+      ? 'http://localhost:3000' 
+      : 'https://art-que.vercel.app';
+    
     if (!model_run_id) {
       return NextResponse.json(
         { error: 'Missing required parameter: model_run_id' },
@@ -82,7 +87,7 @@ export async function POST(request: NextRequest) {
     try {
       // Step 1: Enhance feedback with GPT-5
       console.log('🤖 Enhancing feedback with GPT-5...');
-      const gptResponse = await fetch('http://localhost:3000/api/gpt-text', {
+      const gptResponse = await fetch(`${baseUrl}/api/gpt-text`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -114,7 +119,7 @@ export async function POST(request: NextRequest) {
       geminiFormData.append('num_images', '1');
       geminiFormData.append('output_format', 'png');
 
-      const geminiResponse = await fetch('http://localhost:3000/api/gemini-25-edit', {
+      const geminiResponse = await fetch(`${baseUrl}/api/gemini-25-edit`, {
         method: 'POST',
         body: geminiFormData
       });
