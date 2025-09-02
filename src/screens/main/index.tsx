@@ -105,6 +105,9 @@ export default function Main() {
   // Shared selection for tool inputs (Gemini/OpenAI); separate from email selection
   const [toolSelectedImages, setToolSelectedImages] = useState<string[]>([])
   
+  // Enhanced prompts for images
+  const [enhancedPrompts, setEnhancedPrompts] = useState<Record<string, string>>({})
+  
   // Canvas and image refs for flux editing
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sketchRef = useRef<any>(null)
@@ -776,6 +779,33 @@ export default function Main() {
     return 'Edit'
   }
 
+  // Get enhanced prompt for an image (for automated generations)
+  const getEnhancedPrompt = async (imageUrl: string): Promise<string | null> => {
+    if (!currentCard?.image_history || !currentCard.model_run_id) return null
+    
+    const index = currentCard.image_history.indexOf(imageUrl)
+    if (index === -1) return null
+    
+    // For Gemini 2.5 images that might have enhanced prompts, fetch from y_sticker_edits metadata
+    if (getToolLabel(imageUrl) === 'Gemini 2.5') {
+      try {
+        const { data, error } = await supabase
+          .from('y_sticker_edits')
+          .select('metadata')
+          .eq('model_run_id', currentCard.model_run_id)
+          .single()
+        
+        if (!error && data?.metadata?.enhanced_feedback) {
+          return data.metadata.enhanced_feedback
+        }
+      } catch (e) {
+        console.error('Error fetching enhanced prompt:', e)
+      }
+    }
+    
+    return null
+  }
+
   const getBucketColor = (bucket: string) => {
     switch (bucket) {
       case 'Urgent': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
@@ -905,7 +935,35 @@ export default function Main() {
     setBrushSize(50)
     // Clear canvas mask if present
     clearMask()
+    
+    // Load enhanced prompts for this card's images
+    if (card?.model_run_id && card?.image_history?.length > 0) {
+      loadEnhancedPrompts(card.model_run_id, card.image_history)
+    }
   }, [currentCardIndex, cardData])
+
+  // Load enhanced prompts for images
+  const loadEnhancedPrompts = async (modelRunId: string, imageHistory: string[]) => {
+    try {
+      const { data, error } = await supabase
+        .from('y_sticker_edits')
+        .select('metadata')
+        .eq('model_run_id', modelRunId)
+        .single()
+      
+      if (!error && data?.metadata?.enhanced_feedback) {
+        // For now, assume the first image (index 0) uses the enhanced prompt
+        if (imageHistory.length > 0) {
+          setEnhancedPrompts(prev => ({
+            ...prev,
+            [imageHistory[0]]: data.metadata.enhanced_feedback
+          }))
+        }
+      }
+    } catch (e) {
+      console.error('Error loading enhanced prompts:', e)
+    }
+  }
 
   // Timer to update running job status
   useEffect(() => {
@@ -2442,6 +2500,16 @@ export default function Main() {
 
                                     {/* Enhanced Control Panel */}
                                     <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 px-4 py-3">
+                                      {/* Enhanced Prompt Display */}
+                                      {enhancedPrompts[imageUrl] && (
+                                        <div className="mb-3">
+                                          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Enhanced Prompt:</div>
+                                          <div className="text-xs text-gray-700 dark:text-gray-300 line-clamp-4 leading-relaxed">
+                                            {enhancedPrompts[imageUrl]}
+                                          </div>
+                                        </div>
+                                      )}
+                                      
                                       <div className="flex items-center justify-end mb-3">
                                         <div className="flex items-center gap-2">
                                           <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full"></div>
