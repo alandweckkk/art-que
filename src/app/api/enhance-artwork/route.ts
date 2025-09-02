@@ -11,9 +11,9 @@ export async function POST(request: NextRequest) {
     const { model_run_id } = await request.json();
     
     // Get the base URL for internal API calls
-    const baseUrl = request.url.includes('localhost') 
-      ? 'http://localhost:3000' 
-      : 'https://art-que.vercel.app';
+    const host = request.headers.get('host');
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const baseUrl = host ? `${protocol}://${host}` : 'https://art-que.vercel.app';
     
     if (!model_run_id) {
       return NextResponse.json(
