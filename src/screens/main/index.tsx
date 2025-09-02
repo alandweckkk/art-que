@@ -1995,6 +1995,9 @@ export default function Main() {
                       <div className="text-xs text-gray-600 dark:text-gray-400">
                         {currentCard.customer_email}
                       </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-500 font-mono">
+                        Model Run {currentCard.model_run_id}
+                      </div>
                       <div className="text-xs text-gray-500 dark:text-gray-500">
                         Created {formatTimeAgo(currentCard.days_since_created, currentCard.hours_since_created, currentCard.minutes_since_created)}
                       </div>
@@ -2326,12 +2329,12 @@ export default function Main() {
                         {isGeminiEditorOpen && (
                           <div className="bg-gradient-to-br from-purple-50 via-purple-100 to-violet-50 dark:from-purple-900/20 dark:via-purple-800/20 dark:to-violet-900/20 border-t border-purple-200 dark:border-purple-700 w-full p-2" style={{ height: '60px' }}>
                             {/* Prompt Input for Gemini */}
-                            <div className="relative h-full">
+                            <div className="relative">
                               <textarea
                                 value={geminiPrompt}
                                 onChange={(e) => setGeminiPrompt(e.target.value)}
                                 placeholder="Describe how you want to edit this image…"
-                                className="w-full h-full px-3 py-2 pr-24 text-sm border rounded resize-none bg-white"
+                                className="w-full px-3 py-2 pr-24 text-sm border rounded resize-none bg-white"
                                 maxLength={500}
                                 disabled={isGeminiGenerating}
                                 rows={3}
