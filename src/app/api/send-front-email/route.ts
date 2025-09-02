@@ -253,7 +253,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       });
     } else {
       return NextResponse.json(
-        { success: false, error: result.error, emailData: { processedUrls } },
+        { success: false, error: result.error, emailData: { subject: '', body: '', processedUrls } },
         { status: 500 }
       );
     }

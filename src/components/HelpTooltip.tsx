@@ -94,7 +94,7 @@ export default function HelpTooltip() {
                     </h5>
                     
                     <div className="space-y-3">
-                      <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border-l-4 border-red-500">
+                      <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
                         <p className="font-semibold text-red-800 dark:text-red-200">🔥 Bucket 1: Urgent Items</p>
                         <p className="text-sm text-gray-700 dark:text-gray-300">Records with urgency levels (1-5). Higher numbers = higher priority. Ties broken by oldest feedback first.</p>
                         <div className="mt-2 p-2 bg-gray-800 rounded text-xs text-green-400 font-mono">

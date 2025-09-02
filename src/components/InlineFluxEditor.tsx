@@ -336,7 +336,7 @@ export function InlineFluxEditor({ imageUrl, onProcessedImage, onError, toolsOnl
 
           <button
             onClick={clearMask}
-            className="p-2 rounded bg-red-600 text-white hover:bg-red-700"
+            className="p-2 rounded bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-0"
             title="Clear mask"
           >
             <RotateCcw className="w-4 h-4" />

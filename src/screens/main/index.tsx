@@ -44,19 +44,49 @@ interface JobState {
   globalJobId?: string
 }
 
+// Helper function to format time ago
+const formatTimeAgo = (days: number, hours: number, minutes: number): string => {
+  if (days > 0) {
+    const remainingHours = hours % 24;
+    const remainingMinutes = minutes % 60;
+    
+    let result = `${days} day${days !== 1 ? 's' : ''}`;
+    if (remainingHours > 0) {
+      result += ` ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}`;
+    }
+    if (remainingMinutes > 0 && days < 7) { // Only show minutes for recent days
+      result += ` ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+    }
+    return result + ' ago';
+  } else if (hours > 0) {
+    const remainingMinutes = minutes % 60;
+    let result = `${hours} hour${hours !== 1 ? 's' : ''}`;
+    if (remainingMinutes > 0) {
+      result += ` ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+    }
+    return result + ' ago';
+  } else {
+    return `${Math.max(1, minutes)} minute${minutes !== 1 ? 's' : ''} ago`;
+  }
+};
+
+
+
 export default function Main() {
   const [data, setData] = useState<StickerEdit[]>([])
   const [cardData, setCardData] = useState<StickerEdit[]>([])
   const [loading, setLoading] = useState(true)
   const [cardLoading, setCardLoading] = useState(false)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
+  const [sortMode, setSortMode] = useState<'priority' | 'newest'>('priority')
   const [currentCardIndex, setCurrentCardIndex] = useState(0)
   const [isFluxEditorOpen, setIsFluxEditorOpen] = useState(false)
-  const [isGeminiEditorOpen, setIsGeminiEditorOpen] = useState(false)
+  const [isGeminiEditorOpen, setIsGeminiEditorOpen] = useState(true)
   const [isOpenAIEditorOpen, setIsOpenAIEditorOpen] = useState(false)
   
   // Flux editing state
   const [fluxPrompt, setFluxPrompt] = useState("")
+  const [fluxBaseImageUrl, setFluxBaseImageUrl] = useState<string>("")
   const [isGenerating, setIsGenerating] = useState(false)
   const [maskDataUrl, setMaskDataUrl] = useState<string>("")
   const [showMaskOverlay, setShowMaskOverlay] = useState(false)
@@ -65,11 +95,15 @@ export default function Main() {
   
   // Gemini 2.5 editing state
   const [geminiPrompt, setGeminiPrompt] = useState("")
+  const [geminiInputImages, setGeminiInputImages] = useState<string[]>([])
   const [isGeminiGenerating, setIsGeminiGenerating] = useState(false)
   
   // OpenAI editing state
   const [openAIPrompt, setOpenAIPrompt] = useState("Your task is to generate an image that adheres to the specified style. Attached are three reference images that exemplify this target style. The last image is a photo reference that dictates the content and subject to be generated. Your goal is to depict the subject in our specified style. Ignore background. The style is chibi sticker. You should aim to depict the photo reference subject in a flattering yet accurate way. Bodies: simplified torsos only (waist-up) like a sticker.")
+  const [openAIInputImages, setOpenAIInputImages] = useState<string[]>([])
   const [isOpenAIGenerating, setIsOpenAIGenerating] = useState(false)
+  // Shared selection for tool inputs (Gemini/OpenAI); separate from email selection
+  const [toolSelectedImages, setToolSelectedImages] = useState<string[]>([])
   
   // Canvas and image refs for flux editing
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -200,7 +234,7 @@ export default function Main() {
   }
 
   // Fetch real data from Supabase with pagination
-  const fetchStickerEdits = async (page: number = 1) => {
+  const fetchStickerEdits = useCallback(async (page: number = 1) => {
     setLoading(true)
     try {
       // First get total count
@@ -290,65 +324,72 @@ export default function Main() {
           })
         }
 
-        // Sort the data using the 4-bucket priority system before transforming
-        const sortedEdits = [...stickerEdits].sort((a, b) => {
-          // Now a and b are model_run records, with optional y_sticker_edits data
-          const aStickerEdit = Array.isArray(a.y_sticker_edits) ? a.y_sticker_edits[0] : a.y_sticker_edits
-          const bStickerEdit = Array.isArray(b.y_sticker_edits) ? b.y_sticker_edits[0] : b.y_sticker_edits
-          
-          // Get user spending totals
-          const aSpending = userSpending[a.user_id.toString()] || 0
-          const bSpending = userSpending[b.user_id.toString()] || 0
-          
-          // Check for mail order customers
-          const aHasMailOrder = stripeData?.some(event => 
-            event.user_id === a.user_id.toString() && event.pack_type === 'mail_order'
-          ) || false
-          const bHasMailOrder = stripeData?.some(event => 
-            event.user_id === b.user_id.toString() && event.pack_type === 'mail_order'
-          ) || false
-          
-          // Bucket 1: Urgency records (urgency IS NOT NULL)
-          const aHasUrgency = aStickerEdit?.urgency !== null && aStickerEdit?.urgency !== undefined
-          const bHasUrgency = bStickerEdit?.urgency !== null && bStickerEdit?.urgency !== undefined
-          
-          if (aHasUrgency && !bHasUrgency) return -1
-          if (!aHasUrgency && bHasUrgency) return 1
-          if (aHasUrgency && bHasUrgency) {
-            // Within urgency bucket: higher urgency first, then older created_at
-            if (aStickerEdit.urgency !== bStickerEdit.urgency) {
-              // Map urgency text to numbers for comparison
-              const urgencyMap = { 'do it now': 3, 'very high': 2, 'high': 1 }
-              const aUrgencyNum = urgencyMap[aStickerEdit.urgency as keyof typeof urgencyMap] || 0
-              const bUrgencyNum = urgencyMap[bStickerEdit.urgency as keyof typeof urgencyMap] || 0
-              return bUrgencyNum - aUrgencyNum // Higher urgency first
+        // Sort the data using the selected sort mode
+        let sortedEdits
+        if (sortMode === 'newest') {
+          sortedEdits = [...stickerEdits].sort((a, b) => {
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          })
+        } else {
+          // Priority sorting (existing 4-bucket system)
+          sortedEdits = [...stickerEdits].sort((a, b) => {
+            const aStickerEdit = Array.isArray(a.y_sticker_edits) ? a.y_sticker_edits[0] : a.y_sticker_edits
+            const bStickerEdit = Array.isArray(b.y_sticker_edits) ? b.y_sticker_edits[0] : b.y_sticker_edits
+            
+            // Get user spending totals
+            const aSpending = userSpending[a.user_id.toString()] || 0
+            const bSpending = userSpending[b.user_id.toString()] || 0
+            
+            // Check for mail order customers
+            const aHasMailOrder = stripeData?.some(event => 
+              event.user_id === a.user_id.toString() && event.pack_type === 'mail_order'
+            ) || false
+            const bHasMailOrder = stripeData?.some(event => 
+              event.user_id === b.user_id.toString() && event.pack_type === 'mail_order'
+            ) || false
+            
+            // Bucket 1: Urgency records (urgency IS NOT NULL)
+            const aHasUrgency = aStickerEdit?.urgency !== null && aStickerEdit?.urgency !== undefined
+            const bHasUrgency = bStickerEdit?.urgency !== null && bStickerEdit?.urgency !== undefined
+            
+            if (aHasUrgency && !bHasUrgency) return -1
+            if (!aHasUrgency && bHasUrgency) return 1
+            if (aHasUrgency && bHasUrgency) {
+              // Within urgency bucket: higher urgency first, then older created_at
+              if (aStickerEdit.urgency !== bStickerEdit.urgency) {
+                // Map urgency text to numbers for comparison
+                const urgencyMap = { 'do it now': 3, 'very high': 2, 'high': 1 }
+                const aUrgencyNum = urgencyMap[aStickerEdit.urgency as keyof typeof urgencyMap] || 0
+                const bUrgencyNum = urgencyMap[bStickerEdit.urgency as keyof typeof urgencyMap] || 0
+                return bUrgencyNum - aUrgencyNum // Higher urgency first
+              }
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             }
+            
+            // For non-urgency records, apply bucket logic
+            // Bucket 2: Mail order customers (Print Order comes first)
+            if (aHasMailOrder && !bHasMailOrder) return -1
+            if (!aHasMailOrder && bHasMailOrder) return 1
+            if (aHasMailOrder && bHasMailOrder) {
+              // Both mail order: sort by created_at (older first)
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            }
+            
+            // Bucket 3: High spenders (>$9)
+            const aIsHighSpender = aSpending > 9
+            const bIsHighSpender = bSpending > 9
+            
+            if (aIsHighSpender && !bIsHighSpender) return -1
+            if (!aIsHighSpender && bIsHighSpender) return 1
+            if (aIsHighSpender && bIsHighSpender) {
+              // Both high spenders: sort by created_at (older first)
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            }
+            
+            // Bucket 4: Remainder - sort by created_at (older first)
             return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          }
-          
-          // For non-urgency records, apply bucket logic
-          // Bucket 2: Mail order customers (Print Order comes first)
-          if (aHasMailOrder && !bHasMailOrder) return -1
-          if (!aHasMailOrder && bHasMailOrder) return 1
-          if (aHasMailOrder && bHasMailOrder) {
-            // Both mail order: sort by created_at (older first)
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          }
-          
-          // Bucket 3: High spenders (>$9)
-          const aIsHighSpender = aSpending > 9
-          const bIsHighSpender = bSpending > 9
-          
-          if (aIsHighSpender && !bIsHighSpender) return -1
-          if (!aIsHighSpender && bIsHighSpender) return 1
-          if (aIsHighSpender && bIsHighSpender) {
-            // Both high spenders: sort by created_at (older first)
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          }
-          
-          // Bucket 4: Remainder - sort by created_at (older first)
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        })
+          })
+        }
 
         // Transform the sorted data to match our interface with real Stripe spending data
         const transformedData = sortedEdits.map(modelRun => {
@@ -441,10 +482,10 @@ export default function Main() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [sortMode, pageSize])
 
   // Fetch ALL records for card view (no pagination, no image loading)
-  const fetchCardViewData = async () => {
+  const fetchCardViewData = useCallback(async () => {
     setCardLoading(true)
     try {
       // Get total count (same as table view)
@@ -534,58 +575,66 @@ export default function Main() {
           })
         }
 
-        // Sort using the same 4-bucket priority system
-        const sortedEdits = [...stickerEdits].sort((a, b) => {
-          const aStickerEdit = Array.isArray(a.y_sticker_edits) ? a.y_sticker_edits[0] : a.y_sticker_edits
-          const bStickerEdit = Array.isArray(b.y_sticker_edits) ? b.y_sticker_edits[0] : b.y_sticker_edits
-          
-          const aSpending = userSpending[a.user_id.toString()] || 0
-          const bSpending = userSpending[b.user_id.toString()] || 0
-          
-          const aHasMailOrder = stripeData?.some(event => 
-            event.user_id === a.user_id.toString() && event.pack_type === 'mail_order'
-          ) || false
-          const bHasMailOrder = stripeData?.some(event => 
-            event.user_id === b.user_id.toString() && event.pack_type === 'mail_order'
-          ) || false
-          
-          // Bucket 1: Urgency records
-          const aHasUrgency = aStickerEdit?.urgency !== null && aStickerEdit?.urgency !== undefined
-          const bHasUrgency = bStickerEdit?.urgency !== null && bStickerEdit?.urgency !== undefined
-          
-          if (aHasUrgency && !bHasUrgency) return -1
-          if (!aHasUrgency && bHasUrgency) return 1
-          if (aHasUrgency && bHasUrgency) {
-            if (aStickerEdit.urgency !== bStickerEdit.urgency) {
-              // Map urgency text to numbers for comparison
-              const urgencyMap = { 'do it now': 3, 'very high': 2, 'high': 1 }
-              const aUrgencyNum = urgencyMap[aStickerEdit.urgency as keyof typeof urgencyMap] || 0
-              const bUrgencyNum = urgencyMap[bStickerEdit.urgency as keyof typeof urgencyMap] || 0
-              return bUrgencyNum - aUrgencyNum // Higher urgency first
+        // Sort using the selected sort mode  
+        let sortedEdits
+        if (sortMode === 'newest') {
+          sortedEdits = [...stickerEdits].sort((a, b) => {
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          })
+        } else {
+          // Priority sorting (existing 4-bucket system)
+          sortedEdits = [...stickerEdits].sort((a, b) => {
+            const aStickerEdit = Array.isArray(a.y_sticker_edits) ? a.y_sticker_edits[0] : a.y_sticker_edits
+            const bStickerEdit = Array.isArray(b.y_sticker_edits) ? b.y_sticker_edits[0] : b.y_sticker_edits
+            
+            const aSpending = userSpending[a.user_id.toString()] || 0
+            const bSpending = userSpending[b.user_id.toString()] || 0
+            
+            const aHasMailOrder = stripeData?.some(event => 
+              event.user_id === a.user_id.toString() && event.pack_type === 'mail_order'
+            ) || false
+            const bHasMailOrder = stripeData?.some(event => 
+              event.user_id === b.user_id.toString() && event.pack_type === 'mail_order'
+            ) || false
+            
+            // Bucket 1: Urgency records
+            const aHasUrgency = aStickerEdit?.urgency !== null && aStickerEdit?.urgency !== undefined
+            const bHasUrgency = bStickerEdit?.urgency !== null && bStickerEdit?.urgency !== undefined
+            
+            if (aHasUrgency && !bHasUrgency) return -1
+            if (!aHasUrgency && bHasUrgency) return 1
+            if (aHasUrgency && bHasUrgency) {
+              if (aStickerEdit.urgency !== bStickerEdit.urgency) {
+                // Map urgency text to numbers for comparison
+                const urgencyMap = { 'do it now': 3, 'very high': 2, 'high': 1 }
+                const aUrgencyNum = urgencyMap[aStickerEdit.urgency as keyof typeof urgencyMap] || 0
+                const bUrgencyNum = urgencyMap[bStickerEdit.urgency as keyof typeof urgencyMap] || 0
+                return bUrgencyNum - aUrgencyNum // Higher urgency first
+              }
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             }
+            
+            // Bucket 2: Mail order customers
+            if (aHasMailOrder && !bHasMailOrder) return -1
+            if (!aHasMailOrder && bHasMailOrder) return 1
+            if (aHasMailOrder && bHasMailOrder) {
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            }
+            
+            // Bucket 3: High spenders
+            const aIsHighSpender = aSpending > 9
+            const bIsHighSpender = bSpending > 9
+            
+            if (aIsHighSpender && !bIsHighSpender) return -1
+            if (!aIsHighSpender && bIsHighSpender) return 1
+            if (aIsHighSpender && bIsHighSpender) {
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            }
+            
+            // Bucket 4: Remainder
             return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          }
-          
-          // Bucket 2: Mail order customers
-          if (aHasMailOrder && !bHasMailOrder) return -1
-          if (!aHasMailOrder && bHasMailOrder) return 1
-          if (aHasMailOrder && bHasMailOrder) {
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          }
-          
-          // Bucket 3: High spenders
-          const aIsHighSpender = aSpending > 9
-          const bIsHighSpender = bSpending > 9
-          
-          if (aIsHighSpender && !bIsHighSpender) return -1
-          if (!aIsHighSpender && bIsHighSpender) return 1
-          if (aIsHighSpender && bIsHighSpender) {
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          }
-          
-          // Bucket 4: Remainder
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        })
+          })
+        }
 
         // Transform data (same logic as table view)
         const transformedData = sortedEdits.map(modelRun => {
@@ -662,19 +711,19 @@ export default function Main() {
     } finally {
       setCardLoading(false)
     }
-  }
+  }, [sortMode])
 
   // Load data on component mount and when page changes
   useEffect(() => {
     fetchStickerEdits(currentPage)
-  }, [currentPage])
+  }, [currentPage, sortMode, fetchStickerEdits])
 
-  // Load card data when switching to card view
+  // Load card data when switching to card view or sort mode changes
   useEffect(() => {
-    if (viewMode === 'card' && cardData.length === 0) {
+    if (viewMode === 'card') {
       fetchCardViewData()
     }
-  }, [viewMode, cardData.length, fetchCardViewData])
+  }, [viewMode, fetchCardViewData, sortMode])
 
   // Pagination navigation functions
   const goToNextPage = () => {
@@ -835,6 +884,17 @@ export default function Main() {
     setFluxPrompt(card?.feedback_notes || '')
     setGeminiPrompt(card?.feedback_notes || '')
     setOpenAIPrompt(card?.feedback_notes || '')
+    // Ensure Gemini editor is open with populated input
+    setIsGeminiEditorOpen(true)
+    // Explicitly close other editors when switching cards
+    setIsFluxEditorOpen(false)
+    setIsOpenAIEditorOpen(false)
+    // Reset input selections for tools
+    const defaultUrl = card?.preprocessed_output_image_url || card?.output_image_url || ''
+    setFluxBaseImageUrl(defaultUrl)
+    setGeminiInputImages(defaultUrl ? [defaultUrl] : [])
+    setOpenAIInputImages(defaultUrl ? [defaultUrl] : [])
+    setToolSelectedImages([])
     // Reset editor UI state/loading flags
     setIsGenerating(false)
     setIsGeminiGenerating(false)
@@ -961,7 +1021,9 @@ export default function Main() {
 
   // Handle flux generation
   const handleFluxGenerate = useCallback(async () => {
-    if (!currentCard?.preprocessed_output_image_url) return;
+    if (!currentCard) return;
+    const baseUrl = fluxBaseImageUrl || currentCard.preprocessed_output_image_url || currentCard.output_image_url
+    if (!baseUrl) return;
     
     if (!fluxPrompt.trim()) {
       handleFluxEditorError("Please enter a prompt describing what you want to inpaint");
@@ -975,7 +1037,7 @@ export default function Main() {
       setIsGenerating(true);
       await globalClientJobQueue.enqueue(`Flux on ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
         const formData = new FormData();
-        formData.append('image_url', currentCard.preprocessed_output_image_url);
+        formData.append('image_url', baseUrl);
         formData.append('prompt', fluxPrompt.trim());
         const maskResponse = await fetch(maskDataUrl);
         const maskBlob = await maskResponse.blob();
@@ -1001,7 +1063,7 @@ export default function Main() {
         return { imageUrl: result.data.imageUrl } as const
       }, {
         model_run_id: currentCard.model_run_id,
-        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        original_image_url: baseUrl,
         feedback_notes: currentCard.feedback_notes
       })
     } catch (e) {
@@ -1027,7 +1089,8 @@ export default function Main() {
       await globalClientJobQueue.enqueue(`Gemini on ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
         const formData = new FormData();
         formData.append('prompt', geminiPrompt.trim());
-        formData.append('image_urls', currentCard.preprocessed_output_image_url);
+        const urls = (toolSelectedImages.length ? toolSelectedImages : (geminiInputImages.length ? geminiInputImages : [currentCard.preprocessed_output_image_url])).filter(Boolean)
+        formData.append('image_urls', urls.join(','));
         formData.append('num_images', '1');
         formData.append('output_format', 'png');
         const response = await fetch('/api/gemini-25-edit', { method: 'POST', body: formData });
@@ -1075,14 +1138,10 @@ export default function Main() {
     try {
       setIsOpenAIGenerating(true);
       await globalClientJobQueue.enqueue(`OpenAI on ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
+        const urls = (toolSelectedImages.length ? toolSelectedImages : (openAIInputImages.length ? openAIInputImages : [currentCard.preprocessed_output_image_url])).filter(Boolean).slice(0, 5)
         const requestBody = {
-          inputImages: [
-            {
-              type: 'url',
-              data: currentCard.preprocessed_output_image_url
-            }
-          ],
-          prompt: openAIPrompt.trim()
+          inputImages: urls.map((u) => ({ type: 'url', data: u })),
+          prompt: openAIPrompt.trim(),
         } as const
         const response = await fetch(
           `https://yqvsxaifoqoohljhidrp.supabase.co/functions/v1/generate-image`,
@@ -1215,10 +1274,7 @@ export default function Main() {
   }
 
   const sendFixedArtwork = async () => {
-    if (!currentCard || selectedImages.length === 0) {
-      alert('Please select at least one image to send.')
-      return
-    }
+    if (!currentCard || selectedImages.length === 0) return
 
     try {
       setIsSendingEmail(true)
@@ -1273,14 +1329,61 @@ export default function Main() {
         console.log('✅ Email sent successfully:', result)
       } else {
         console.error('❌ Email send failed:', result.error)
-        alert(`Failed to send email: ${result.error}`)
+        throw new Error(`Failed to send email: ${result.error}`)
       }
     } catch (error) {
       console.error('💥 Error sending email:', error)
-      alert(`Error sending email: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setIsSendingEmail(false)
+      throw error
     } finally {
       setIsSendingEmail(false)
     }
+  }
+
+  const markAsResolved = async () => {
+    if (!currentCard) return
+
+    await globalClientJobQueue.enqueue(`Mark as resolved ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
+      // Update the database to mark as resolved
+      const { error } = await supabase
+        .from('model_run')
+        .update({ 
+          feedback_addressed: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', currentCard.model_run_id)
+
+      if (error) {
+        console.error('Error marking as resolved:', error)
+        throw new Error(`Failed to mark as resolved: ${error.message || 'Unknown error'}`)
+      }
+
+      console.log(`✅ Marked record ${currentCard.model_run_id} as resolved`)
+      
+      // Move to next record or refresh data
+      if (viewMode === 'card') {
+        // Remove from cardData array
+        setCardData(prev => prev.filter(card => card.model_run_id !== currentCard.model_run_id))
+        
+        // Adjust current index if needed
+        if (currentCardIndex >= cardData.length - 1) {
+          setCurrentCardIndex(Math.max(0, currentCardIndex - 1))
+        }
+      } else {
+        // Refresh table data
+        fetchStickerEdits(currentPage)
+      }
+
+      // Clear any selections
+      setSelectedImages([])
+      setToolSelectedImages([])
+
+      return "Marked as resolved"
+    }, {
+      model_run_id: currentCard.model_run_id,
+      original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+      feedback_notes: currentCard.feedback_notes
+    })
   }
 
   const sendCreditAndEmail = async () => {
@@ -1330,16 +1433,16 @@ export default function Main() {
         })
       }
       if (result.success) {
-        alert(`Credit email sent to ${currentCard.customer_email}!\n\nMessage ID: ${result.messageId}`)
         clearImageSelection()
         console.log('✅ Credit email sent:', result)
       } else {
         console.error('❌ Credit email failed:', result.error)
-        alert(`Failed to send credit email: ${result.error}`)
+        throw new Error(`Failed to send credit email: ${result.error}`)
       }
     } catch (error) {
       console.error('💥 Error sending credit email:', error)
-      alert(`Error sending credit email: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setIsSendingCreditEmail(false)
+      throw error
     } finally {
       setIsSendingCreditEmail(false)
     }
@@ -1419,6 +1522,13 @@ export default function Main() {
     }
   }
 
+  // Remove a URL from current tool selections
+  const removeToolImage = (url: string) => {
+    setToolSelectedImages(prev => prev.filter(u => u !== url))
+    setOpenAIInputImages(prev => prev.filter(u => u !== url))
+    setGeminiInputImages(prev => prev.filter(u => u !== url))
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="mx-auto" style={{ maxWidth: '1700px' }}>
@@ -1430,7 +1540,7 @@ export default function Main() {
               Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, totalRecords)} of {totalRecords} records
             </div>
             {/* Center: toggle */}
-            <div className="flex justify-center">
+            <div className="flex justify-center items-center gap-4">
               <div className="flex bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm border border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setViewMode('card')}
@@ -1444,6 +1554,19 @@ export default function Main() {
                 >
                   Table View
                 </button>
+              </div>
+              
+              {/* Sort Dropdown */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Sort:</span>
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as 'priority' | 'newest')}
+                  className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="priority">Priority</option>
+                  <option value="newest">Newest</option>
+                </select>
               </div>
             </div>
             {/* Right: prev/next */}
@@ -1628,7 +1751,7 @@ export default function Main() {
                         {/* Output Image */}
                         {edit.output_image_url && (
                           <div className="relative group">
-                            <div className="w-10 h-10 rounded border-2 border-red-400 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                               <img 
                                 src={edit.output_image_url} 
                                 alt="Generated" 
@@ -1736,7 +1859,7 @@ export default function Main() {
               </div>
 
               {/* Center */}
-              <div className="flex justify-center">
+              <div className="flex justify-center items-center gap-4">
                 <div className="flex bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm border border-gray-200 dark:border-gray-700">
                   <button
                     onClick={() => setViewMode('card')}
@@ -1750,6 +1873,19 @@ export default function Main() {
                   >
                     Table View
                   </button>
+                </div>
+                
+                {/* Sort Dropdown */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Sort:</span>
+                  <select
+                    value={sortMode}
+                    onChange={(e) => setSortMode(e.target.value as 'priority' | 'newest')}
+                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="priority">Priority</option>
+                    <option value="newest">Newest</option>
+                  </select>
                 </div>
               </div>
 
@@ -1802,13 +1938,22 @@ export default function Main() {
                         {currentCard.customer_email}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-500">
-                        Created {currentCard.days_since_created} days ago
+                        Created {formatTimeAgo(currentCard.days_since_created, currentCard.hours_since_created, currentCard.minutes_since_created)}
                       </div>
                     </div>
                   </div>
                   
                   {/* Email Controls */}
                   <div className="flex items-center space-x-3">
+                    {/* Resolved Button */}
+                    <button
+                      onClick={markAsResolved}
+                      className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                      title="Mark as resolved without sending emails"
+                    >
+                      Resolved
+                    </button>
+
                     {/* Email Selection Info */}
                     {selectedImages.length > 0 && (
                       <div className="flex items-center space-x-2 text-xs text-gray-600">
@@ -1867,19 +2012,18 @@ export default function Main() {
 
               {/* Feedback Notes Row */}
               <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Feedback Notes</div>
-                <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+                <div className="text-lg text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
                   {currentCard.feedback_notes || 'No feedback provided'}
                 </div>
               </div>
 
               {/* Images - Two Column Layout */}
               <div className="mb-6" style={{ height: '1500px' }}>
-                <div className="flex h-full">
+                <div className="flex h-full justify-center">
                   {/* Left Column: Green Box */}
-                  <div className="flex-1 border border-green-500 rounded-lg overflow-hidden h-full flex justify-center">
+                  <div className="rounded-lg overflow-hidden h-full flex justify-center" style={{ width: '750px' }}>
                     <div className="border border-gray-300 dark:border-gray-600 h-full flex justify-center" style={{ width: '650px' }}>
-                      <div className="border border-orange-500 flex flex-col" style={{ width: '600px' }}>
+                      <div className="flex flex-col" style={{ width: '600px' }}>
                         {/* Image Container - Enforce exact square size */}
                         <div className="w-full aspect-square bg-gray-100 dark:bg-gray-300 relative">
                           <div className="absolute inset-0 flex items-center justify-center">
@@ -1956,49 +2100,121 @@ export default function Main() {
                           </div>
                         </div>
                         
-                        {/* Toolbar beneath the image */}
-                        <div className="bg-white border-t border-gray-300 w-full p-3">
-                          <div className="flex items-center justify-center gap-3">
-                            <button 
-                              onClick={handleFluxEditorToggle}
-                              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                isFluxEditorOpen 
-                                  ? 'bg-orange-600 hover:bg-orange-700 text-white' 
-                                  : 'bg-blue-500 hover:bg-blue-600 text-white'
-                              }`}
-                            >
-                              {isFluxEditorOpen ? 'Close Editor' : 'Flux in painting'}
-                            </button>
-                            
-                            <button 
-                              onClick={handleGeminiEditorToggle}
-                              className={`px-4 py-2 rounded-lg font-medium transition-colors inline-flex items-center gap-2 ${
-                                isGeminiEditorOpen 
-                                  ? 'bg-purple-600 hover:bg-purple-700 text-white' 
-                                  : 'bg-green-500 hover:bg-green-600 text-white'
-                              }`}
-                            >
-                              <Sparkles className="w-4 h-4" />
-                              {isGeminiEditorOpen ? 'Close Gemini' : 'Gemini 2.5 Edit'}
-                            </button>
-                            
-                            <button 
-                              onClick={handleOpenAIEditorToggle}
-                              className={`px-4 py-2 rounded-lg font-medium transition-colors inline-flex items-center gap-2 ${
-                                isOpenAIEditorOpen 
-                                  ? 'bg-yellow-600 hover:bg-yellow-700 text-white' 
-                                  : 'bg-indigo-500 hover:bg-indigo-600 text-white'
-                              }`}
-                            >
-                              <Zap className="w-4 h-4" />
-                              {isOpenAIEditorOpen ? 'Close OpenAI' : 'OpenAI Generate'}
-                            </button>
+                        {/* Unified AI Tools Section */}
+                        <div className={`w-full transition-all duration-500 ${
+                          isGeminiEditorOpen 
+                            ? 'bg-gradient-to-br from-purple-50 via-purple-100 to-violet-50 dark:from-purple-900/20 dark:via-purple-800/20 dark:to-violet-900/20 border-t border-purple-200 dark:border-purple-700' 
+                            : isOpenAIEditorOpen
+                            ? 'bg-gradient-to-br from-emerald-50 via-green-100 to-teal-50 dark:from-emerald-900/20 dark:via-green-800/20 dark:to-teal-900/20 border-t border-emerald-200 dark:border-emerald-700'
+                            : isFluxEditorOpen
+                            ? 'bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-50 dark:from-blue-900/20 dark:via-blue-800/20 dark:to-indigo-900/20 border-t border-blue-200 dark:border-blue-700'
+                            : 'bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 border-t border-gray-100 dark:border-gray-700'
+                        }`}>
+                          {/* Toolbar Header */}
+                          <div className="px-6 py-3">
+                            <div className="flex flex-col items-center space-y-2">
+                              {/* Main Action Buttons Row */}
+                              <div className="flex items-center gap-4">
+                                {/* Gemini Button */}
+                                <button 
+                                  onClick={handleGeminiEditorToggle}
+                                  className={`group relative px-6 py-3 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg inline-flex items-center gap-3 ${
+                                    isGeminiEditorOpen 
+                                      ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-300 dark:shadow-purple-900/50' 
+                                      : 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/30'
+                                  }`}
+                                >
+                                  <div className="relative">
+                                    <Sparkles className="w-5 h-5 transition-transform group-hover:rotate-12" />
+                                    {isGeminiEditorOpen && (
+                                      <div className="absolute -inset-1 bg-white/20 rounded-full animate-pulse"></div>
+                                    )}
+                                  </div>
+                                  <span className="text-sm font-medium">
+                                    {isGeminiEditorOpen ? 'Close Gemini' : 'Gemini 2.5'}
+                                  </span>
+                                </button>
+
+                                {/* OpenAI Button */}
+                                <button 
+                                  onClick={handleOpenAIEditorToggle}
+                                  className={`group relative px-6 py-3 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg inline-flex items-center gap-3 ${
+                                    isOpenAIEditorOpen 
+                                      ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-lg shadow-green-300 dark:shadow-green-900/50' 
+                                      : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg shadow-green-300 dark:shadow-green-900/30'
+                                  }`}
+                                >
+                                  <div className="relative">
+                                    <svg className="w-5 h-5 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="currentColor">
+                                      <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/>
+                                    </svg>
+                                    {isOpenAIEditorOpen && (
+                                      <div className="absolute -inset-1 bg-white/20 rounded-full animate-pulse"></div>
+                                    )}
+                                  </div>
+                                  <span className="text-sm font-medium">
+                                    {isOpenAIEditorOpen ? 'Close OpenAI' : 'OpenAI'}
+                                  </span>
+                                </button>
+
+                                {/* Flux Inpainting Button */}
+                                <button 
+                                  onClick={handleFluxEditorToggle}
+                                  className={`group relative px-6 py-3 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg inline-flex items-center gap-3 ${
+                                    isFluxEditorOpen 
+                                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-300 dark:shadow-blue-900/50' 
+                                      : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-200 dark:shadow-blue-900/30'
+                                  }`}
+                                >
+                                  <div className="relative">
+                                    <Brush className="w-5 h-5 transition-transform group-hover:rotate-12" />
+                                    {isFluxEditorOpen && (
+                                      <div className="absolute -inset-1 bg-white/20 rounded-full animate-pulse"></div>
+                                    )}
+                                  </div>
+                                  <span className="text-sm font-medium">
+                                    {isFluxEditorOpen ? 'Close Flux' : 'Flux Inpainting'}
+                                  </span>
+                                </button>
+                              </div>
+                              
+
+                            </div>
                           </div>
-                        </div>
                         
                         {/* Expandable Tools Section */}
                         {isFluxEditorOpen && (
-                          <div className="bg-gray-50 border-t border-gray-300 w-full p-3 space-y-3" style={{ height: '140px' }}>
+                          <div className="bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-50 dark:from-blue-900/20 dark:via-blue-800/20 dark:to-indigo-900/20 border-t border-blue-200 dark:border-blue-700 w-full p-2 space-y-2" style={{ height: '120px' }}>
+                            {/* Prompt Input */}
+                            <div className="relative">
+                              <textarea
+                                value={fluxPrompt}
+                                onChange={(e) => setFluxPrompt(e.target.value)}
+                                placeholder="Describe what to inpaint…"
+                                className="w-full px-3 py-2 pr-24 text-sm border rounded resize-none bg-white"
+                                maxLength={500}
+                                disabled={isGenerating}
+                                rows={3}
+                              />
+                              <button
+                                onClick={handleFluxGenerate}
+                                disabled={isGenerating || !fluxPrompt.trim() || !maskDataUrl}
+                                className="absolute bottom-2 right-2 inline-flex items-center gap-2 px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 text-sm"
+                              >
+                                {isGenerating ? (
+                                  <span className="inline-flex items-center gap-2">
+                                    <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></span>
+                                    <span className="text-xs">Generating…</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Wand2 className="w-3 h-3" />
+                                    <span className="text-xs">Generate</span>
+                                  </span>
+                                )}
+                              </button>
+                            </div>
+
                             {/* Brush Controls */}
                             <div className="flex items-center gap-2">
                               <button
@@ -2039,40 +2255,10 @@ export default function Main() {
 
                               <button
                                 onClick={clearMask}
-                                className="p-2 rounded bg-red-600 text-white hover:bg-red-700"
+                                className="p-2 rounded bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-0"
                                 title="Clear mask"
                               >
                                 <RotateCcw className="w-4 h-4" />
-                              </button>
-                            </div>
-
-                            {/* Prompt Input */}
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                value={fluxPrompt}
-                                onChange={(e) => setFluxPrompt(e.target.value)}
-                                placeholder="Describe what to inpaint…"
-                                className="flex-1 px-3 py-2 text-sm border rounded"
-                                maxLength={500}
-                                disabled={isGenerating}
-                              />
-                              <button
-                                onClick={handleFluxGenerate}
-                                disabled={isGenerating || !fluxPrompt.trim() || !maskDataUrl}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
-                              >
-                                {isGenerating ? (
-                                  <span className="inline-flex items-center gap-2">
-                                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-                                    Generating…
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-2">
-                                    <Wand2 className="w-4 h-4" />
-                                    Generate
-                                  </span>
-                                )}
                               </button>
                             </div>
                           </div>
@@ -2080,32 +2266,32 @@ export default function Main() {
                         
                         {/* Gemini 2.5 Tools Section */}
                         {isGeminiEditorOpen && (
-                          <div className="bg-gray-50 border-t border-gray-300 w-full p-3" style={{ height: '80px' }}>
+                          <div className="bg-gradient-to-br from-purple-50 via-purple-100 to-violet-50 dark:from-purple-900/20 dark:via-purple-800/20 dark:to-violet-900/20 border-t border-purple-200 dark:border-purple-700 w-full p-2" style={{ height: '60px' }}>
                             {/* Prompt Input for Gemini */}
-                            <div className="flex items-center gap-2 h-full">
-                              <input
-                                type="text"
+                            <div className="relative h-full">
+                              <textarea
                                 value={geminiPrompt}
                                 onChange={(e) => setGeminiPrompt(e.target.value)}
                                 placeholder="Describe how you want to edit this image…"
-                                className="flex-1 px-3 py-2 text-sm border rounded"
+                                className="w-full h-full px-3 py-2 pr-24 text-sm border rounded resize-none bg-white"
                                 maxLength={500}
                                 disabled={isGeminiGenerating}
+                                rows={3}
                               />
                               <button
                                 onClick={handleGeminiGenerate}
                                 disabled={isGeminiGenerating || !geminiPrompt.trim()}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+                                className="absolute bottom-2 right-2 inline-flex items-center gap-2 px-3 py-1.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 text-sm"
                               >
                                 {isGeminiGenerating ? (
                                   <span className="inline-flex items-center gap-2">
-                                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-                                    Generating…
+                                    <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></span>
+                                    <span className="text-xs">Generating…</span>
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-2">
-                                    <Sparkles className="w-4 h-4" />
-                                    Generate
+                                  <span className="inline-flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3" />
+                                    <span className="text-xs">Generate</span>
                                   </span>
                                 )}
                               </button>
@@ -2115,42 +2301,60 @@ export default function Main() {
                         
                         {/* OpenAI Tools Section */}
                         {isOpenAIEditorOpen && (
-                          <div className="bg-gray-50 border-t border-gray-300 w-full p-3 space-y-3" style={{ height: '120px' }}>
-                            {/* Editable Prompt for OpenAI */}
-                            <div className="flex flex-col gap-2 h-full">
-                              <textarea
-                                value={openAIPrompt}
-                                onChange={(e) => setOpenAIPrompt(e.target.value)}
-                                placeholder="Enter your custom prompt for OpenAI image generation…"
-                                className="flex-1 px-3 py-2 text-sm border rounded resize-none"
-                                maxLength={1000}
-                                disabled={isOpenAIGenerating}
-                                rows={2}
-                              />
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => setOpenAIPrompt("Your task is to generate an image that adheres to the specified style. Attached are three reference images that exemplify this target style. The last image is a photo reference that dictates the content and subject to be generated. Your goal is to depict the subject in our specified style. Ignore background. The style is chibi sticker. You should aim to depict the photo reference subject in a flattering yet accurate way. Bodies: simplified torsos only (waist-up) like a sticker.")}
-                                  className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                >
-                                  Reset to Default
-                                </button>
+                          <div className="bg-gradient-to-br from-emerald-50 via-green-100 to-teal-50 dark:from-emerald-900/20 dark:via-green-800/20 dark:to-teal-900/20 border-t border-emerald-200 dark:border-emerald-700 w-full p-2 space-y-2">
+                            {/* Inputs */}
+                            <div className="flex items-start gap-3">
+                              <div className="flex-1 relative">
+                                <textarea
+                                  value={openAIPrompt}
+                                  onChange={(e) => setOpenAIPrompt(e.target.value)}
+                                  placeholder="Describe what to generate…"
+                                  className="w-full px-3 py-2 pr-24 text-sm border rounded resize-none focus:ring-2 focus:ring-yellow-500 bg-white"
+                                  maxLength={1000}
+                                  disabled={isOpenAIGenerating}
+                                  rows={3}
+                                />
                                 <button
                                   onClick={handleOpenAIGenerate}
                                   disabled={isOpenAIGenerating || !openAIPrompt.trim()}
-                                  className="inline-flex items-center gap-2 px-4 py-2 rounded bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-50"
+                                  className="absolute bottom-2 right-2 inline-flex items-center gap-2 px-3 py-1.5 rounded bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-50 text-sm"
                                 >
                                   {isOpenAIGenerating ? (
                                     <span className="inline-flex items-center gap-2">
-                                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-                                      Generating…
+                                      <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></span>
+                                      <span className="text-xs">Generating…</span>
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-2">
-                                      <Zap className="w-4 h-4" />
-                                      Generate
+                                    <span className="inline-flex items-center gap-1">
+                                      <Zap className="w-3 h-3" />
+                                      <span className="text-xs">Generate</span>
                                     </span>
                                   )}
                                 </button>
+                              </div>
+                              {/* no payload preview per request */}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setOpenAIPrompt("Your task is to generate an image that adheres to the specified style. Attached are three reference images that exemplify this target style. The last image is a photo reference that dictates the content and subject to be generated. Your goal is to depict the subject in our specified style. Ignore background. The style is chibi sticker. You should aim to depict the photo reference subject in a flattering yet accurate way. Bodies: simplified torsos only (waist-up) like a sticker.")}
+                                className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                              >
+                                Reset to Default
+                              </button>
+                              {/* Selected image chips */}
+                              <div className="flex flex-wrap gap-2">
+                                {(toolSelectedImages.length ? toolSelectedImages : openAIInputImages).slice(0,5).map((url) => (
+                                  <div key={url} className="relative w-20 h-20 rounded border overflow-hidden">
+                                    <img src={url} alt="sel" className="w-full h-full object-cover" />
+                                    <button
+                                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 text-xs"
+                                      title="Remove"
+                                      onClick={() => removeToolImage(url)}
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           </div>
@@ -2159,19 +2363,45 @@ export default function Main() {
                         {/* Original Input Image - Below all tool sections */}
                         {currentCard.input_image_url && (
                           <div className="w-full mt-3">
-                            <div className="text-xs text-gray-600 mb-2">Original Input</div>
-                            <div className="w-full aspect-square bg-white border border-gray-300 rounded overflow-hidden">
-                              <img 
-                                src={currentCard.input_image_url}
-                                alt="Original input"
-                                className="w-full h-full object-contain"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none'
-                                }}
-                              />
+                            <div className="mb-2"></div>
+                            <div className="w-full bg-white border border-gray-300 rounded overflow-hidden">
+                              <div className="w-full aspect-square bg-white">
+                                <img 
+                                  src={currentCard.input_image_url}
+                                  alt="Original input"
+                                  className="w-full h-full object-contain"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none'
+                                  }}
+                                />
+                              </div>
+                              <div className="h-[40px] w-full flex items-center justify-end px-2 border-t bg-white">
+                                <button
+                                  onClick={() => setToolSelectedImages(prev => prev.includes(currentCard.input_image_url) ? prev.filter(u => u !== currentCard.input_image_url) : [...prev, currentCard.input_image_url])}
+                                  className={`group relative px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 transform hover:scale-105 flex items-center gap-2 ${
+                                    toolSelectedImages.includes(currentCard.input_image_url)
+                                      ? 'bg-gradient-to-r from-purple-500 to-violet-600 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/30'
+                                      : 'bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 text-gray-700 dark:text-gray-300 hover:from-purple-50 hover:to-violet-50 dark:hover:from-purple-900/20 dark:hover:to-violet-900/20 border border-gray-200 dark:border-gray-600'
+                                  }`}
+                                  title={toolSelectedImages.includes(currentCard.input_image_url) ? "Remove from AI tool input" : "Use as AI tool input"}
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                  </svg>
+                                  <span>{toolSelectedImages.includes(currentCard.input_image_url) ? 'Selected' : 'AI Tool'}</span>
+                                  {toolSelectedImages.includes(currentCard.input_image_url) && (
+                                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center">
+                                      <svg className="w-2 h-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    </div>
+                                  )}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2181,76 +2411,140 @@ export default function Main() {
                   </div>
 
                   {/* Right Column: Blue Box */}
-                  <div className="flex-1 border border-blue-500 rounded-lg overflow-hidden h-full flex justify-center">
+                  <div className="rounded-lg overflow-hidden h-full flex justify-center" style={{ width: '750px' }}>
                     <div className="border border-gray-300 dark:border-gray-600 h-full flex justify-center" style={{ width: '650px' }}>
-                      <div className="border border-orange-500 flex flex-col overflow-hidden" style={{ width: '600px' }}>
-                        {/* Image History - Scrollable list with most recent first */}
-                        <div className="bg-gray-200 dark:bg-gray-300 w-full h-full overflow-y-auto">
+                      <div className="flex flex-col overflow-hidden" style={{ width: '600px' }}>
+                        {/* Modern Image History Gallery */}
+                        <div className="bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50 dark:from-slate-900 dark:via-gray-900 dark:to-blue-900 w-full h-full overflow-y-auto">
                           {currentCard.image_history && currentCard.image_history.length > 0 ? (
-                            <div className="space-y-2">
+                            <div className="space-y-4">
+
+
+                              {/* Image Grid */}
                               {currentCard.image_history.map((imageUrl, index) => (
                                 <div key={`${imageUrl}-${index}`} className="relative">
-                                  <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                                    <div className="w-full aspect-square bg-gray-100">
+                                  <div>
+                                    {/* Image Container */}
+                                    <div className="relative w-full aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800">
                                       <img 
                                         src={imageUrl} 
                                         alt={`Edit ${index + 1}`} 
-                                        className="w-full h-full object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                                        className="w-full h-full object-contain cursor-pointer"
                                         onClick={() => window.open(imageUrl, '_blank')}
                                         onError={(e) => {
                                           e.currentTarget.style.display = 'none'
                                         }}
                                       />
+
+
+
                                     </div>
-                                    <div className="h-[60px] w-full flex items-center justify-between px-2 border-t bg-white">
-                                      <span className="text-xs font-medium text-gray-600">
-                                        {getToolLabel(imageUrl)}
-                                      </span>
-                                      <div className="flex items-center space-x-2">
-                                        <span className="text-xs text-gray-400">
-                                          {index === 0 ? 'Most Recent' : ''}
-                                        </span>
-                                        {/* Checkbox for email selection */}
-                                        <label className="flex items-center cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            checked={selectedImages.includes(imageUrl)}
-                                            onChange={() => toggleImageSelection(imageUrl)}
-                                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                                          />
-                                          <span className="ml-1 text-xs text-gray-600">Email</span>
-                                        </label>
-                                        {/* Delete image from image_history */}
-                                        <button
-                                          title="Delete image"
-                                          className="p-1 rounded hover:bg-red-50 text-red-600"
-                                          onClick={async () => {
-                                            if (!currentCard) return
-                                            const confirmDelete = confirm('Remove this generated image from history?')
-                                            if (!confirmDelete) return
-                                            const newHistory = currentCard.image_history.filter((u) => u !== imageUrl)
-                                            const { error } = await supabase
-                                              .from('y_sticker_edits')
-                                              .update({ image_history: newHistory, updated_at: new Date().toISOString() })
-                                              .eq('model_run_id', currentCard.model_run_id)
-                                            if (!error) {
-                                              setCardData(prev => prev.map(card => card.model_run_id === currentCard.model_run_id ? { ...card, image_history: newHistory } : card))
-                                            } else {
-                                              alert('Failed to delete image')
-                                            }
-                                          }}
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
+
+                                    {/* Enhanced Control Panel */}
+                                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 px-4 py-3">
+                                      <div className="flex items-center justify-end mb-3">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full"></div>
+                                          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                                            {getToolLabel(imageUrl)}
+                                          </span>
+                                        </div>
                                       </div>
+
+                                      {/* Action Controls */}
+                                      <div className="flex items-center justify-end gap-2">
+                                        <div className="flex items-center gap-2">
+                                          {/* Delete Button */}
+                                          <button
+                                            title="Delete image"
+                                            className="group/delete p-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-500 hover:text-red-600 transition-all duration-200 hover:scale-110"
+                                            onClick={async () => {
+                                              if (!currentCard) return
+                                              const confirmDelete = confirm('Remove this generated image from history?')
+                                              if (!confirmDelete) return
+                                              const newHistory = currentCard.image_history.filter((u) => u !== imageUrl)
+                                              const { error } = await supabase
+                                                .from('y_sticker_edits')
+                                                .update({ image_history: newHistory, updated_at: new Date().toISOString() })
+                                                .eq('model_run_id', currentCard.model_run_id)
+                                              if (!error) {
+                                                setCardData(prev => prev.map(card => card.model_run_id === currentCard.model_run_id ? { ...card, image_history: newHistory } : card))
+                                              } else {
+                                                alert('Failed to delete image')
+                                              }
+                                            }}
+                                          >
+                                            <Trash2 className="w-4 h-4 transition-transform group-hover/delete:scale-110" />
+                                          </button>
+
+                                          {/* AI Tool Input Button */}
+                                          <button
+                                            onClick={() => setToolSelectedImages(prev => prev.includes(imageUrl) ? prev.filter(u => u !== imageUrl) : [...prev, imageUrl])}
+                                            className={`group relative px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 transform hover:scale-105 flex items-center gap-2 ${
+                                              toolSelectedImages.includes(imageUrl)
+                                                ? 'bg-gradient-to-r from-purple-500 to-violet-600 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/30'
+                                                : 'bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 text-gray-700 dark:text-gray-300 hover:from-purple-50 hover:to-violet-50 dark:hover:from-purple-900/20 dark:hover:to-violet-900/20 border border-gray-200 dark:border-gray-600'
+                                            }`}
+                                            title={toolSelectedImages.includes(imageUrl) ? "Remove from AI tool input" : "Use as AI tool input"}
+                                          >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                            </svg>
+                                            <span>{toolSelectedImages.includes(imageUrl) ? 'Input' : 'AI Tool'}</span>
+                                            {toolSelectedImages.includes(imageUrl) && (
+                                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center">
+                                                <svg className="w-2 h-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                              </div>
+                                            )}
+                                          </button>
+
+                                          {/* Email to Customer Button */}
+                                          <button
+                                            onClick={() => toggleImageSelection(imageUrl)}
+                                            className={`group relative px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 transform hover:scale-105 flex items-center gap-2 ${
+                                              selectedImages.includes(imageUrl)
+                                                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30'
+                                                : 'bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 text-gray-700 dark:text-gray-300 hover:from-emerald-50 hover:to-teal-50 dark:hover:from-emerald-900/20 dark:hover:to-teal-900/20 border border-gray-200 dark:border-gray-600'
+                                            }`}
+                                            title={selectedImages.includes(imageUrl) ? "Remove from customer email" : "Add to customer email"}
+                                          >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                            </svg>
+                                            <span>{selectedImages.includes(imageUrl) ? 'Selected' : 'Email'}</span>
+                                            {selectedImages.includes(imageUrl) && (
+                                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center">
+                                                <svg className="w-2 h-2 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                              </div>
+                                            )}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Horizontal Divider */}
+                                    <div className="flex justify-center py-2">
+                                      <div className="w-[90%] h-px bg-gray-400 dark:bg-gray-500"></div>
                                     </div>
                                   </div>
                                 </div>
                               ))}
                             </div>
                           ) : (
-                            <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-600 text-sm">
-                              No edit history yet
+                            <div className="flex flex-col items-center justify-center h-full text-center">
+                              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center mb-4">
+                                <svg className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                              <h3 className="text-lg font-semibold text-gray-600 dark:text-gray-400 mb-2">No edits yet</h3>
+                              <p className="text-sm text-gray-500 dark:text-gray-500 max-w-xs">
+                                Start editing with the tools on the left to see your generated images here
+                              </p>
                             </div>
                           )}
                         </div>

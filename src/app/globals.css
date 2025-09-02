@@ -25,6 +25,15 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Remove all browser default focus outlines */
+* {
+  outline: none;
+}
+
+*:focus {
+  outline: none;
+}
+
 /* Hide visible scrollbars while keeping content scrollable */
 .no-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
