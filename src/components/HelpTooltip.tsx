@@ -20,23 +20,52 @@ export default function HelpTooltip() {
       <div className="flex items-center">
         <button
           onClick={openModal}
-          className="w-8 h-8 bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-md transition-colors duration-200 flex items-center justify-center group"
+          className="inline-flex items-center cursor-pointer transition-all duration-200"
           title="Help & Information"
+          style={{
+            gap: '6px',
+            padding: '6px 14px',
+            backgroundColor: '#ffffff',
+            border: '1px solid #e0e0e0',
+            borderRadius: '12px',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+            fontSize: '14px',
+            color: '#666666'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f9f9f9';
+            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.08)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#ffffff';
+            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0';
+            e.currentTarget.style.boxShadow = 'inset 0 1px 2px rgba(0, 0, 0, 0.1)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.backgroundColor = '#f9f9f9';
+            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.08)';
+          }}
         >
           {/* Question mark icon */}
           <svg 
-            className="w-5 h-5" 
-            fill="none" 
-            stroke="currentColor" 
+            width="16"
+            height="16"
+            fill="#666666"
             viewBox="0 0 24 24"
           >
             <path 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth={2} 
-              d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" 
+              d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              stroke="#666666"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
             />
           </svg>
+          <span>Help</span>
         </button>
       </div>
 

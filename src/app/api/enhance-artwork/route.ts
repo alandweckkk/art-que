@@ -85,36 +85,15 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Created y_sticker_edits record: ${insertedRecord.id}`);
 
     try {
-      // Step 1: Enhance feedback with GPT-5
-      console.log('🤖 Enhancing feedback with GPT-5...');
-      const gptResponse = await fetch(`${baseUrl}/api/gpt-text`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          text: modelRunData.feedback_notes,
-          instructions: 'enhance this user prompt so it is clearer and longer',
-          verbosity: 'medium'
-        })
-      });
+      // Step 1: Create contextual instruction with user feedback
+      console.log('📝 Creating contextual instruction with user feedback...');
+      const contextualPrompt = `Edit the sticker design to achieve this person's feedback: ${modelRunData.feedback_notes}`;
+      console.log('✨ Contextual prompt:', contextualPrompt);
 
-      if (!gptResponse.ok) {
-        throw new Error(`GPT API failed: ${gptResponse.status}`);
-      }
-
-      const gptData = await gptResponse.json();
-      if (!gptData.success || !gptData.response) {
-        throw new Error('Invalid GPT response');
-      }
-
-      const enhancedFeedback = gptData.response;
-      console.log('✨ Enhanced feedback:', enhancedFeedback);
-
-      // Step 2: Generate improved image with Gemini
+      // Step 2: Generate improved image with Gemini using contextual prompt
       console.log('🎨 Generating improved image with Gemini...');
       const geminiFormData = new FormData();
-      geminiFormData.append('prompt', enhancedFeedback);
+      geminiFormData.append('prompt', contextualPrompt);
       geminiFormData.append('image_urls', modelRunData.preprocessed_output_image_url);
       geminiFormData.append('num_images', '1');
       geminiFormData.append('output_format', 'png');
@@ -144,12 +123,12 @@ export async function POST(request: NextRequest) {
           image_history: [generatedImageUrl],
           metadata: {
             revision: 1,
-            setup: 'enhanced_with_gpt_and_gemini',
+            setup: 'contextual_prompt_with_gemini',
             original_feedback: modelRunData.feedback_notes,
             original_input_image_url: modelRunData.input_image_url,
             original_output_image_url: modelRunData.output_image_url,
             original_preprocessed_image_url: modelRunData.preprocessed_output_image_url,
-            enhanced_feedback: enhancedFeedback,
+            contextual_prompt: contextualPrompt,
             generated_at: new Date().toISOString(),
             processing_success: true
           }
@@ -167,7 +146,7 @@ export async function POST(request: NextRequest) {
         record_id: insertedRecord.id,
         model_run_id,
         original_feedback: modelRunData.feedback_notes,
-        enhanced_feedback: enhancedFeedback,
+        contextual_prompt: contextualPrompt,
         generated_image_url: generatedImageUrl,
         message: 'Processing completed successfully'
       });
@@ -180,16 +159,16 @@ export async function POST(request: NextRequest) {
         .from('y_sticker_edits')
         .update({
           status: 'failed',
-                  metadata: {
-          revision: 1,
-          setup: 'enhanced_with_gpt_and_gemini',
-          original_feedback: modelRunData.feedback_notes,
-          original_input_image_url: modelRunData.input_image_url,
-          original_output_image_url: modelRunData.output_image_url,
-          original_preprocessed_image_url: modelRunData.preprocessed_output_image_url,
-          error: processingError instanceof Error ? processingError.message : 'Unknown processing error',
-          failed_at: new Date().toISOString()
-        }
+          metadata: {
+            revision: 1,
+            setup: 'contextual_prompt_with_gemini',
+            original_feedback: modelRunData.feedback_notes,
+            original_input_image_url: modelRunData.input_image_url,
+            original_output_image_url: modelRunData.output_image_url,
+            original_preprocessed_image_url: modelRunData.preprocessed_output_image_url,
+            error: processingError instanceof Error ? processingError.message : 'Unknown processing error',
+            failed_at: new Date().toISOString()
+          }
         })
         .eq('id', insertedRecord.id);
 

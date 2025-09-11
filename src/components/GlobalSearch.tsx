@@ -18,17 +18,28 @@ export default function GlobalSearch({ onSelect }: GlobalSearchProps) {
   const [results, setResults] = useState<SearchResult[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false)
+        setIsExpanded(false)
+        setQuery('')
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  const handleSearchIconClick = () => {
+    setIsExpanded(true)
+    setTimeout(() => {
+      inputRef.current?.focus()
+    }, 100)
+  }
 
   useEffect(() => {
     const delay = setTimeout(async () => {
@@ -87,23 +98,87 @@ export default function GlobalSearch({ onSelect }: GlobalSearchProps) {
   }, [query])
 
   return (
-    <div ref={containerRef} className="relative w-64">
+    <div ref={containerRef} className={`relative transition-all duration-300 ${isExpanded ? 'w-64' : 'w-auto'}`}>
       <div className="flex items-center">
-        <div className="relative flex-1">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => results.length && setIsOpen(true)}
-            placeholder="Search by email..."
-            className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          {isLoading && (
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          )}
-        </div>
+        {!isExpanded ? (
+          // Search icon button (collapsed state)
+          <button
+            onClick={handleSearchIconClick}
+            className="inline-flex items-center cursor-pointer transition-all duration-200"
+            title="Search"
+            style={{
+              gap: '6px',
+              padding: '6px 14px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #e0e0e0',
+              borderRadius: '12px',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+              fontSize: '14px',
+              color: '#666666'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#f9f9f9';
+              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#ffffff';
+              e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+            }}
+          >
+            <svg 
+              width="16"
+              height="16"
+              fill="none"
+              stroke="#666666"
+              viewBox="0 0 24 24"
+              strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.35-4.35"/>
+            </svg>
+            <span>Search</span>
+          </button>
+        ) : (
+          // Expanded search input
+          <div className="relative flex-1">
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => results.length && setIsOpen(true)}
+              placeholder="Search by email..."
+              className="w-full focus:outline-none transition-all duration-200"
+              style={{
+                padding: '6px 14px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e0e0e0',
+                borderRadius: '12px',
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                fontSize: '14px',
+                color: '#666666'
+              }}
+              onFocus={(e) => {
+                if (results.length) setIsOpen(true);
+                e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.08)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+              }}
+            />
+            {isLoading && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            )}
+          </div>
+        )}
       </div>
       {isOpen && results.length > 0 && (
-        <div className="absolute mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50 max-h-64 overflow-auto no-scrollbar">
+        <div className="absolute mt-1 w-full z-50 max-h-64 overflow-auto no-scrollbar" 
+             style={{ 
+               backgroundColor: '#ffffff',
+               border: '1px solid #e0e0e0',
+               borderRadius: '12px',
+               boxShadow: '0 2px 4px rgba(0, 0, 0, 0.08)'
+             }}>
           {results.map((r) => (
             <button
               key={`${r.user_id}-${r.latest_model_run_id || 'none'}`}
@@ -112,10 +187,10 @@ export default function GlobalSearch({ onSelect }: GlobalSearchProps) {
                 setQuery('')
                 onSelect(r)
               }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
             >
-              <div className="text-gray-900 dark:text-gray-100">{r.email}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
+              <div className="text-gray-900">{r.email}</div>
+              <div className="text-xs text-gray-500">
                 {r.latest_model_run_id ? `Latest unresolved run: ${r.latest_model_run_id}` : 'No recent unresolved runs'}
               </div>
             </button>

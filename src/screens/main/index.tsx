@@ -1588,7 +1588,7 @@ export default function Main() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+    <div className="min-h-screen bg-white p-6">
       <div className="mx-auto" style={{ maxWidth: '1700px' }}>
         {/* View Toggle (only show here for table view). Card view toggle is embedded in header. */}
         {viewMode === 'table' && (
@@ -1978,9 +1978,9 @@ export default function Main() {
                 <span className="ml-3 text-gray-600 dark:text-gray-300">Loading all records for card view...</span>
               </div>
             ) : currentCard ? (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+            <div className="bg-white rounded-xl shadow-lg border border-gray-200">
               {/* Customer Info Header */}
-              <div className="border-t-4 border-gray-600 dark:border-gray-500 rounded-t-xl p-4 bg-gray-50 dark:bg-gray-700/50">
+              <div className="rounded-t-xl bg-white" style={{ padding: '16px' }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className="w-12 h-12 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
@@ -1989,16 +1989,16 @@ export default function Main() {
                       </span>
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                      <div className="text-sm font-semibold text-gray-900">
                         {currentCard.customer_name || 'Unknown Customer'}
                       </div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                      <div className="text-xs" style={{ color: '#222222' }}>
                         {currentCard.customer_email}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-500 font-mono">
+                      <div className="text-xs font-mono" style={{ color: '#666666' }}>
                         Model Run {currentCard.model_run_id}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-500">
+                      <div className="text-xs" style={{ color: '#666666' }}>
                         Created {formatTimeAgo(currentCard.days_since_created, currentCard.hours_since_created, currentCard.minutes_since_created)}
                       </div>
                     </div>
@@ -2009,7 +2009,13 @@ export default function Main() {
                     {/* Resolved Button */}
                     <button
                       onClick={markAsResolved}
-                      className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                      className="px-4 py-2 text-sm font-medium transition-colors text-white shadow-sm"
+                      style={{ 
+                        backgroundColor: '#EAF7EA',
+                        color: '#2E7D32',
+                        borderRadius: '9999px',
+                        border: 'none'
+                      }}
                       title="Mark as resolved without sending emails"
                     >
                       Resolved
@@ -2032,11 +2038,14 @@ export default function Main() {
                     <button
                       onClick={sendCreditAndEmail}
                       disabled={isSendingCreditEmail}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        isSendingCreditEmail
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-amber-600 text-white hover:bg-amber-700 shadow-sm'
-                      }`}
+                      className="px-4 py-2 text-sm font-medium transition-colors shadow-sm"
+                      style={{ 
+                        backgroundColor: isSendingCreditEmail ? '#f3f4f6' : '#FFF3E0',
+                        color: isSendingCreditEmail ? '#6b7280' : '#E65100',
+                        borderRadius: '9999px',
+                        border: 'none',
+                        cursor: isSendingCreditEmail ? 'not-allowed' : 'pointer'
+                      }}
                     >
                       {isSendingCreditEmail ? (
                         <span className="inline-flex items-center">
@@ -2052,11 +2061,14 @@ export default function Main() {
                     <button
                       onClick={sendFixedArtwork}
                       disabled={selectedImages.length === 0 || isSendingEmail}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        selectedImages.length === 0 || isSendingEmail
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-green-600 text-white hover:bg-green-700 shadow-sm'
-                      }`}
+                      className="px-4 py-2 text-sm font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: selectedImages.length === 0 || isSendingEmail ? '#f3f4f6' : 'white',
+                        color: selectedImages.length === 0 || isSendingEmail ? '#6b7280' : '#222222',
+                        border: selectedImages.length === 0 || isSendingEmail ? '1px solid #DDDDDD' : '1px solid #DDDDDD',
+                        borderRadius: '4px',
+                        cursor: selectedImages.length === 0 || isSendingEmail ? 'not-allowed' : 'pointer'
+                      }}
                     >
                       {isSendingEmail ? (
                         <span className="inline-flex items-center">
@@ -2072,21 +2084,33 @@ export default function Main() {
               </div>
 
               {/* Feedback Notes Row */}
-              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                <div className="text-lg text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+              <div className="border-b border-gray-200" style={{ padding: '16px' }}>
+                <div className="whitespace-pre-wrap" style={{ fontSize: '14px', fontWeight: '400', color: '#222222', lineHeight: '1.5' }}>
                   {currentCard.feedback_notes || 'No feedback provided'}
                 </div>
               </div>
 
               {/* Images - Two Column Layout */}
-              <div className="mb-6" style={{ height: '1500px' }}>
+              <div className="mb-6" 
+                   style={{ 
+                     height: '1500px',
+                     backgroundImage: `radial-gradient(circle, #EDEDED 1px, transparent 1px)`,
+                     backgroundSize: '20px 20px',
+                     backgroundPosition: '0 0',
+                     padding: '24px'
+                   }}>
                 <div className="flex h-full justify-center">
-                  {/* Left Column: Green Box */}
+                  {/* Left Column: Image Container */}
                   <div className="rounded-lg overflow-hidden h-full flex justify-center" style={{ width: '750px' }}>
-                    <div className="border border-gray-300 dark:border-gray-600 h-full flex justify-center" style={{ width: '650px' }}>
+                    <div className="h-full flex justify-center" 
+                         style={{ 
+                           width: '650px',
+                           border: '1px solid #E0E0E0'
+                         }}>
                       <div className="flex flex-col" style={{ width: '600px' }}>
                         {/* Image Container - Enforce exact square size */}
-                        <div className="w-full aspect-square bg-gray-100 dark:bg-gray-300 relative">
+                        <div className="w-full aspect-square bg-white relative" 
+                             style={{ border: '1px solid #E0E0E0' }}>
                           <div className="absolute inset-0 flex items-center justify-center">
                             {currentCard.preprocessed_output_image_url ? (
                               <div className="relative">
@@ -2179,18 +2203,15 @@ export default function Main() {
                                 {/* Gemini Button */}
                                 <button 
                                   onClick={handleGeminiEditorToggle}
-                                  className={`group relative px-6 py-3 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg inline-flex items-center gap-3 ${
-                                    isGeminiEditorOpen 
-                                      ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-300 dark:shadow-purple-900/50' 
-                                      : 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/30'
-                                  }`}
+                                  className="px-6 py-3 font-medium transition-colors inline-flex items-center gap-3"
+                                  style={{
+                                    backgroundColor: isGeminiEditorOpen ? '#3B82F6' : '#3B82F6',
+                                    color: 'white',
+                                    borderRadius: '4px',
+                                    border: 'none'
+                                  }}
                                 >
-                                  <div className="relative">
-                                    <Sparkles className="w-5 h-5 transition-transform group-hover:rotate-12" />
-                                    {isGeminiEditorOpen && (
-                                      <div className="absolute -inset-1 bg-white/20 rounded-full animate-pulse"></div>
-                                    )}
-                                  </div>
+                                  <Sparkles className="w-5 h-5" />
                                   <span className="text-sm font-medium">
                                     {isGeminiEditorOpen ? 'Close Gemini' : 'Gemini 2.5'}
                                   </span>
@@ -2199,20 +2220,17 @@ export default function Main() {
                                 {/* OpenAI Button */}
                                 <button 
                                   onClick={handleOpenAIEditorToggle}
-                                  className={`group relative px-6 py-3 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg inline-flex items-center gap-3 ${
-                                    isOpenAIEditorOpen 
-                                      ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-lg shadow-green-300 dark:shadow-green-900/50' 
-                                      : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg shadow-green-300 dark:shadow-green-900/30'
-                                  }`}
+                                  className="px-6 py-3 font-medium transition-colors inline-flex items-center gap-3"
+                                  style={{
+                                    backgroundColor: 'white',
+                                    color: '#222222',
+                                    border: '1px solid #DDDDDD',
+                                    borderRadius: '4px'
+                                  }}
                                 >
-                                  <div className="relative">
-                                    <svg className="w-5 h-5 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="currentColor">
-                                      <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/>
-                                    </svg>
-                                    {isOpenAIEditorOpen && (
-                                      <div className="absolute -inset-1 bg-white/20 rounded-full animate-pulse"></div>
-                                    )}
-                                  </div>
+                                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/>
+                                  </svg>
                                   <span className="text-sm font-medium">
                                     {isOpenAIEditorOpen ? 'Close OpenAI' : 'OpenAI'}
                                   </span>
@@ -2221,18 +2239,15 @@ export default function Main() {
                                 {/* Flux Inpainting Button */}
                                 <button 
                                   onClick={handleFluxEditorToggle}
-                                  className={`group relative px-6 py-3 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg inline-flex items-center gap-3 ${
-                                    isFluxEditorOpen 
-                                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-300 dark:shadow-blue-900/50' 
-                                      : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-200 dark:shadow-blue-900/30'
-                                  }`}
+                                  className="px-6 py-3 font-medium transition-colors inline-flex items-center gap-3"
+                                  style={{
+                                    backgroundColor: 'white',
+                                    color: '#222222',
+                                    border: '1px solid #DDDDDD',
+                                    borderRadius: '4px'
+                                  }}
                                 >
-                                  <div className="relative">
-                                    <Brush className="w-5 h-5 transition-transform group-hover:rotate-12" />
-                                    {isFluxEditorOpen && (
-                                      <div className="absolute -inset-1 bg-white/20 rounded-full animate-pulse"></div>
-                                    )}
-                                  </div>
+                                  <Brush className="w-5 h-5" />
                                   <span className="text-sm font-medium">
                                     {isFluxEditorOpen ? 'Close Flux' : 'Flux Inpainting'}
                                   </span>
@@ -2468,15 +2483,19 @@ export default function Main() {
                   </div>
 
                   {/* Vertical Divider */}
-                  <div className="w-px bg-gray-300 dark:bg-gray-600" style={{ height: '1500px' }}>
+                  <div className="w-px" style={{ height: '1500px', backgroundColor: '#E0E0E0' }}>
                   </div>
 
-                  {/* Right Column: Blue Box */}
+                  {/* Right Column: Image History */}
                   <div className="rounded-lg overflow-hidden h-full flex justify-center" style={{ width: '750px' }}>
-                    <div className="border border-gray-300 dark:border-gray-600 h-full flex justify-center" style={{ width: '650px' }}>
+                    <div className="h-full flex justify-center" 
+                         style={{ 
+                           width: '650px',
+                           border: '1px solid #E0E0E0'
+                         }}>
                       <div className="flex flex-col overflow-hidden" style={{ width: '600px' }}>
                         {/* Modern Image History Gallery */}
-                        <div className="bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50 dark:from-slate-900 dark:via-gray-900 dark:to-blue-900 w-full h-full overflow-y-auto">
+                        <div className="bg-white w-full h-full overflow-y-auto">
                           {currentCard.image_history && currentCard.image_history.length > 0 ? (
                             <div className="space-y-4">
 
@@ -2486,7 +2505,8 @@ export default function Main() {
                                 <div key={`${imageUrl}-${index}`} className="relative">
                                   <div>
                                     {/* Image Container */}
-                                    <div className="relative w-full aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800">
+                                    <div className="relative w-full aspect-square bg-white" 
+                                         style={{ border: '1px solid #E0E0E0' }}>
                                       <img 
                                         src={imageUrl} 
                                         alt={`Edit ${index + 1}`} 
@@ -2502,12 +2522,12 @@ export default function Main() {
                                     </div>
 
                                     {/* Enhanced Control Panel */}
-                                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 px-4 py-3">
+                                    <div className="bg-white px-4 py-3" style={{ borderTop: '1px solid #E0E0E0' }}>
                                       {/* Enhanced Prompt Display */}
                                       {enhancedPrompts[imageUrl] && (
                                         <div className="mb-3">
-                                          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Enhanced Prompt:</div>
-                                          <div className="text-xs text-gray-700 dark:text-gray-300 line-clamp-4 leading-relaxed">
+                                          <div className="mb-1" style={{ fontSize: '13px', fontWeight: '400', color: '#666666' }}>Enhanced Prompt:</div>
+                                          <div className="line-clamp-4" style={{ fontSize: '14px', fontWeight: '400', color: '#222222', lineHeight: '1.5' }}>
                                             {enhancedPrompts[imageUrl]}
                                           </div>
                                         </div>

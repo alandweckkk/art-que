@@ -138,16 +138,20 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
   }
 
   return (
-    <div className={`fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 transition-all duration-300 ${
+    <div className={`fixed bottom-4 right-4 bg-white rounded-lg shadow-xl border border-gray-200 z-50 transition-all duration-300 ${
       isExpanded ? 'w-96' : 'w-72'
     } max-h-[calc(100vh-2rem)] flex flex-col`}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-600">
+      <div className="flex items-center justify-between border-b border-gray-200" style={{ padding: '16px' }}>
         <div className="flex items-center space-x-2">
           <span className="text-lg">📊</span>
-          <h3 className="font-semibold text-gray-900 dark:text-white">Job Manager</h3>
+          <h3 className="font-semibold" style={{ color: '#666666' }}>Job Manager</h3>
           {jobs.length > 0 && (
-            <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full text-gray-600 dark:text-gray-300">
+            <span className="text-xs px-2 py-1 rounded-full" 
+                  style={{ 
+                    backgroundColor: '#f3f4f6',
+                    color: '#666666'
+                  }}>
               {jobs.length}
             </span>
           )}
@@ -155,14 +159,15 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
         <div className="flex items-center space-x-1">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            className="p-1 hover:bg-gray-100 rounded transition-colors"
             title={isExpanded ? 'Collapse' : 'Expand'}
           >
             {isExpanded ? '📉' : '📈'}
           </button>
           <button
             onClick={() => setIsVisible(false)}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-gray-500 dark:text-gray-400"
+            className="p-1 hover:bg-gray-100 rounded transition-colors"
+            style={{ color: '#666666' }}
             title="Minimize"
           >
             ➖
@@ -171,24 +176,45 @@ export default function JobManager({ onJobUpdate }: JobManagerProps) {
       </div>
 
       {/* Stats */}
-      <div className="p-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
-        <div className="flex justify-between text-sm">
-          <span className="text-blue-600 dark:text-blue-400">Running: {runningJobs}</span>
-          <span className="text-green-600 dark:text-green-400">Completed: {completedJobs}</span>
-          <span className="text-red-600 dark:text-red-400">Failed: {failedJobs}</span>
+      <div className="bg-white border-b border-gray-200" style={{ padding: '16px' }}>
+        <div className="flex justify-between text-sm gap-2">
+          <span className="px-2 py-1 text-xs" 
+                style={{ 
+                  backgroundColor: '#EAF7EA',
+                  color: '#2E7D32',
+                  borderRadius: '9999px'
+                }}>
+            Running: {runningJobs}
+          </span>
+          <span className="px-2 py-1 text-xs" 
+                style={{ 
+                  backgroundColor: '#EAF7EA',
+                  color: '#2E7D32',
+                  borderRadius: '9999px'
+                }}>
+            Completed: {completedJobs}
+          </span>
+          <span className="px-2 py-1 text-xs" 
+                style={{ 
+                  backgroundColor: '#FFEBEE',
+                  color: '#C62828',
+                  borderRadius: '9999px'
+                }}>
+            Failed: {failedJobs}
+          </span>
         </div>
       </div>
 
       {/* Job List */}
       <div className={`flex-1 min-h-0 overflow-y-auto`}>
         {jobs.length === 0 ? (
-          <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+          <div className="p-4 text-center text-sm" style={{ color: '#666666' }}>
             No jobs yet
           </div>
         ) : (
-          <div className="divide-y divide-gray-200 dark:divide-gray-600">
+          <div className="divide-y divide-gray-200">
             {jobs.slice().reverse().map((job) => (
-              <div key={job.id} className="p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer" onClick={() => {
+              <div key={job.id} className="p-3 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => {
                 if (job.model_run_id) {
                   const evt = new CustomEvent('open-record-by-model-run', { detail: { modelRunId: job.model_run_id } })
                   window.dispatchEvent(evt)
