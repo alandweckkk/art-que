@@ -145,7 +145,6 @@ export default function GlobalSearch({ onSelect }: GlobalSearchProps) {
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => results.length && setIsOpen(true)}
               placeholder="Search by email..."
               className="w-full focus:outline-none transition-all duration-200"
               style={{
