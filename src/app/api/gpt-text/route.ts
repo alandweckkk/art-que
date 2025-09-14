@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, instructions, verbosity = 'medium' } = await request.json();
+    const { text, instructions } = await request.json();
 
     if (!text) {
       return NextResponse.json(
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       content: text
     });
 
-    // Call OpenAI GPT-5 API
+    // Call OpenAI GPT API
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -45,10 +45,9 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5',
+        model: 'gpt-4o',
         messages: messages,
-        verbosity: verbosity, // GPT-5 specific parameter
-        max_completion_tokens: 4000, // GPT-5 uses max_completion_tokens instead of max_tokens
+        max_tokens: 4000,
       }),
     });
 
@@ -56,7 +55,7 @@ export async function POST(request: NextRequest) {
       const errorData = await response.json();
       console.error('OpenAI API error:', errorData);
       return NextResponse.json(
-        { error: 'Failed to get response from GPT-5', details: errorData },
+        { error: 'Failed to get response from GPT', details: errorData },
         { status: response.status }
       );
     }
