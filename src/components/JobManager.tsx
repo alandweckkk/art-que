@@ -24,7 +24,7 @@ interface JobManagerProps {
 export default function JobManager({ onJobUpdate }: JobManagerProps) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [isExpanded, setIsExpanded] = useState(false)
-  const [isVisible, setIsVisible] = useState(true)
+  const [isVisible, setIsVisible] = useState(false)
 
   // Timer to update running job status
   useEffect(() => {

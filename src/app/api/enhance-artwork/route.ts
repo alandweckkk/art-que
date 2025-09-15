@@ -94,11 +94,9 @@ export async function POST(request: NextRequest) {
       console.log('🎨 Generating improved image with Gemini...');
       const geminiFormData = new FormData();
       geminiFormData.append('prompt', contextualPrompt);
-      geminiFormData.append('image_urls', modelRunData.preprocessed_output_image_url);
-      geminiFormData.append('num_images', '1');
-      geminiFormData.append('output_format', 'png');
+      geminiFormData.append('imageUrls', modelRunData.preprocessed_output_image_url);
 
-      const geminiResponse = await fetch(`${baseUrl}/api/gemini-25-edit`, {
+      const geminiResponse = await fetch(`${baseUrl}/api/universal-gemini-2.5`, {
         method: 'POST',
         body: geminiFormData
       });
@@ -108,11 +106,11 @@ export async function POST(request: NextRequest) {
       }
 
       const geminiData = await geminiResponse.json();
-      if (!geminiData.success || !geminiData.data?.images?.[0]?.url) {
-        throw new Error('Invalid Gemini response or no images generated');
+      if (!geminiData.success || !geminiData.data?.image) {
+        throw new Error('Invalid Gemini response or no image generated');
       }
 
-      const generatedImageUrl = geminiData.data.images[0].url;
+      const generatedImageUrl = geminiData.data.image;
       console.log('🖼️ Generated image URL:', generatedImageUrl);
 
       // Step 3: Update record with generated image

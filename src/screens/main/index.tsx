@@ -78,7 +78,7 @@ export default function Main() {
   const [loading, setLoading] = useState(true)
   const [cardLoading, setCardLoading] = useState(false)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
-  const [sortMode, setSortMode] = useState<'priority' | 'newest'>('priority')
+  const [sortMode, setSortMode] = useState<'priority' | 'newest'>('newest')
   const [currentCardIndex, setCurrentCardIndex] = useState(0)
   const [isFluxEditorOpen, setIsFluxEditorOpen] = useState(false)
   const [isGeminiEditorOpen, setIsGeminiEditorOpen] = useState(true)
@@ -1332,7 +1332,8 @@ export default function Main() {
   }
 
   const sendFixedArtwork = async () => {
-    if (!currentCard || selectedImages.length === 0) return
+    // Allow sending even without images (user may choose "Send Anyway")
+    if (!currentCard) return
 
     try {
       setIsSendingEmail(true)

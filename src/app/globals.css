@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "react-quill-new/dist/quill.snow.css";
 
 :root {
   --background: #ffffff;
@@ -44,4 +45,79 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari */
+}
+
+/* Table overlay slide-up animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+/* Quill Email Editor Styling */
+.quill-email-editor .ql-container {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  font-size: 16px !important;
+  line-height: 1.6 !important;
+  background: white !important;
+  transition: border-color 0.2s ease !important;
+}
+
+.quill-email-editor .ql-container:hover {
+  border-color: #d1d5db !important;
+}
+
+.quill-email-editor .ql-container:focus-within {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+}
+
+.quill-email-editor .ql-editor {
+  padding: 16px !important;
+  min-height: 280px !important;
+  color: #111827 !important;
+  border: none !important;
+  cursor: text !important;
+}
+
+.quill-email-editor .ql-toolbar {
+  border: none !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  padding: 8px 16px !important;
+  background: #f9fafb !important;
+}
+
+.quill-email-editor .ql-toolbar .ql-formats {
+  margin-right: 15px !important;
+}
+
+.quill-email-editor .ql-toolbar button {
+  padding: 4px 6px !important;
+  border-radius: 4px !important;
+}
+
+.quill-email-editor .ql-toolbar button:hover {
+  background: #e5e7eb !important;
+}
+
+.quill-email-editor .ql-toolbar button.ql-active {
+  background: #3b82f6 !important;
+  color: white !important;
+}
+
+.quill-email-editor .ql-editor.ql-blank::before {
+  color: #9ca3af !important;
+  font-style: italic !important;
+  opacity: 0.8 !important;
 }

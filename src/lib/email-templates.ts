@@ -7,7 +7,12 @@ interface TemplateData {
   correctedImageUrls: string[];
   supportTeamName?: string;
   supportEmail?: string;
+  userId?: string;
+  email?: string;
 }
+
+// Alias for consistency with reference project
+interface EmailTemplateData extends TemplateData {}
 
 interface EmailTemplate {
   subject: string;
@@ -24,17 +29,20 @@ export default class EmailTemplateService {
    * Generates the correction email template
    * This is the main template used when sending corrected artwork to customers
    */
-  static generateCorrectionEmail(_data: TemplateData): EmailTemplate {
-    const subject = "Your Revised Sticker is Here!";
-    
-    const body = `Hey there!<br><br>
+  static generateCorrectionEmail(data: EmailTemplateData): EmailTemplate {
 
-Thank you for purchasing a sticker from MakeMeASticker.com! We heard your feedback and have attached a revised sticker for you.<br><br>
+    const subject = `Your Revised Sticker is Here!`;
 
-If you have any questions or have any suggestions to make our product better, we're happy to help!<br><br>
+    const body = `
+Hi there!<br><br>
 
-Best regards,<br>
-Alan & MakeMeASticker.com<br><br>`;
+I just edited your sticker design - you can <a href="https://makemeasticker.com">click here</a> to see the before and after.<br><br>
+
+Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!<br><br>
+
+Kind Regards,<br>
+Chelsea & <a href="https://makemeasticker.com">MakeMeASticker.com</a> Team<br><br>
+    `.trim();
 
     return {
       subject,
@@ -55,16 +63,29 @@ Alan & MakeMeASticker.com<br><br>`;
    * Generates the credit email template
    * Used when we can't fix the sticker and issue a free credit
    */
-  static generateCreditEmail(_data: TemplateData): EmailTemplate {
+  static generateCreditEmail(data: EmailTemplateData): EmailTemplate {
+
+    // Create the personalized link if userId is provided
+    const siteLink = data.userId 
+      ? `<a href="https://makemeasticker.com/?user_id=${data.userId}">MakeMeASticker.com</a>`
+      : `<a href="https://MakeMeASticker.com">MakeMeASticker.com</a>`;
+
     const subject = "We've Added a Free Credit to Your Account";
-    const body = `Hey there!<br><br>
 
-We're sorry we couldn't fix your sticker this time. We've added a free credit to your account.<br><br>
+    const body = `
+Hey there!<br><br>
 
-If you have any questions or suggestions to make our product better, we're happy to help!<br><br>
+Thank you for trying MakeMeASticker.com! We tried a few times, but unfortunately weren't able to generate you a better revised version. 
 
-Best regards,<br>
-Alan & MakeMeASticker.com<br><br>`;
+We really care about making our customers happy & want to make it up to you, so we've gone ahead and added one FREE sticker credit to your account: ${data.email}!<br><br>
+
+Claim your free credit using this link: ${siteLink} and you'll see you have an extra credit there that you can use. It should show you a "redeem" button after uploading an image, which you can click on to use the credit.<br><br>
+
+Enjoy your free credit! Thank you so much for making stickers with us!<br><br>
+
+Best,<br>
+Chelsea & MakeMeASticker.com<br><br>
+    `.trim();
 
     return {
       subject,
@@ -83,14 +104,8 @@ Alan & MakeMeASticker.com<br><br>`;
     if (!data.ticketNumber) {
       errors.push('ticketNumber is required');
     }
-    if (!data.feedback) {
-      errors.push('feedback is required');
-    }
     if (!data.correctionType) {
       errors.push('correctionType is required');
-    }
-    if (!data.originalImageUrl) {
-      errors.push('originalImageUrl is required');
     }
     if (requireCorrectedImages) {
       if (!data.correctedImageUrls || data.correctedImageUrls.length === 0) {

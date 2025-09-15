@@ -17,6 +17,9 @@ interface SendEmailRequest {
   supportEmail?: string;
   supportTeamName?: string;
   emailMode?: 'correction' | 'credit';
+  customSubject?: string;
+  customBody?: string;
+  userId?: string;
 }
 
 interface SendEmailResponse {
@@ -45,8 +48,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       'ticketId',
       'ticketNumber', 
       'customerEmail',
-      'feedback',
-      'originalImageUrl',
       'correctedImageUrls'
     ];
 
@@ -86,11 +87,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       originalImageUrl: body.originalImageUrl,
       correctedImageUrls: body.correctedImageUrls,
       supportTeamName: body.supportTeamName,
-      supportEmail: body.supportEmail
+      supportEmail: body.supportEmail,
+      userId: body.userId,
+      email: body.customerEmail
     };
 
+    // Skip corrected images validation for:
+    // 1. Credit emails
+    // 2. Draft emails  
+    // 3. When explicitly sending without images (customBody provided indicates user interaction)
+    const skipImageValidation = body.emailMode === 'credit' || 
+                               body.isDraft || 
+                               (body.customBody && body.correctedImageUrls.length === 0);
+    
     const validation = EmailTemplateService.validateTemplateData(templateData, {
-      requireCorrectedImages: body.emailMode === 'credit' ? false : true
+      requireCorrectedImages: !skipImageValidation
     });
     if (!validation.valid) {
       return NextResponse.json(
@@ -119,11 +130,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
     }
 
     // Generate email template
-    const emailTemplate = body.isDraft
+    let emailTemplate = body.isDraft
       ? EmailTemplateService.generateDraftEmail(templateData)
       : body.emailMode === 'credit'
         ? EmailTemplateService.generateCreditEmail(templateData)
         : EmailTemplateService.generateCorrectionEmail(templateData);
+
+    // Override with custom subject and body if provided
+    if (body.customSubject) {
+      emailTemplate.subject = body.customSubject;
+    }
+    if (body.customBody) {
+      emailTemplate.body = body.customBody;
+    }
 
     console.log('📧 Generated email template:', {
       subject: emailTemplate.subject,
