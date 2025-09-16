@@ -110,10 +110,10 @@ export default function FocusedEditingCanvas({ sticker, onNext, onPrevious, onCo
           geminiFormData.append('prompt', prompt)
           geminiFormData.append('debug', 'true')
           
-          // Collect image URLs - use output image and input image if available
+          // Collect image URLs - use preprocessed output image and input image if available
           const imageUrls = []
-          if (includeOriginalDesign && sticker.output_image_url) {
-            imageUrls.push(sticker.output_image_url)
+          if (includeOriginalDesign && sticker.preprocessed_output_image_url) {
+            imageUrls.push(sticker.preprocessed_output_image_url)
           }
           if (includeInputImage && sticker.input_image_url) {
             imageUrls.push(sticker.input_image_url)
@@ -198,7 +198,7 @@ export default function FocusedEditingCanvas({ sticker, onNext, onPrevious, onCo
         setTimeout(() => {
           setOutputs(prev => prev.map(output => 
             output.id === newOutput.id 
-              ? { ...output, status: 'completed' as const, imageUrl: sticker.output_image_url }
+              ? { ...output, status: 'completed' as const, imageUrl: sticker.preprocessed_output_image_url }
               : output
           ))
         }, 3000)
@@ -513,9 +513,9 @@ function ImageControlNode({
             </label>
           </div>
           
-          {includeOriginalDesign && sticker.output_image_url && (
+          {includeOriginalDesign && sticker.preprocessed_output_image_url && (
             <img 
-              src={sticker.output_image_url} 
+              src={sticker.preprocessed_output_image_url} 
               alt="Original design"
               className="w-full h-24 object-cover rounded border"
               draggable={false}

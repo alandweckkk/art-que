@@ -925,7 +925,7 @@ export default function Main() {
     setIsFluxEditorOpen(false)
     setIsOpenAIEditorOpen(false)
     // Reset input selections for tools
-    const defaultUrl = card?.preprocessed_output_image_url || card?.output_image_url || ''
+    const defaultUrl = card?.preprocessed_output_image_url || ''
     setFluxBaseImageUrl(defaultUrl)
     setGeminiInputImages(defaultUrl ? [defaultUrl] : [])
     setOpenAIInputImages(defaultUrl ? [defaultUrl] : [])
@@ -1085,7 +1085,7 @@ export default function Main() {
   // Handle flux generation
   const handleFluxGenerate = useCallback(async () => {
     if (!currentCard) return;
-    const baseUrl = fluxBaseImageUrl || currentCard.preprocessed_output_image_url || currentCard.output_image_url
+    const baseUrl = fluxBaseImageUrl || currentCard.preprocessed_output_image_url
     if (!baseUrl) return;
     
     if (!fluxPrompt.trim()) {
@@ -1309,7 +1309,7 @@ export default function Main() {
         return { imageUrl: localUrl } as const
       }, {
         model_run_id: currentCard.model_run_id,
-        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        original_image_url: currentCard.preprocessed_output_image_url,
         feedback_notes: currentCard.feedback_notes
       })
       
@@ -1397,7 +1397,7 @@ export default function Main() {
         customerName: currentCard.customer_name,
         feedback: currentCard.feedback_notes,
         correctionType: 'manual-correction',
-        originalImageUrl: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        originalImageUrl: currentCard.preprocessed_output_image_url,
         correctedImageUrls: selectedImages,
         isDraft: false,
         sendToCustomer: true,
@@ -1420,7 +1420,7 @@ export default function Main() {
         return r
       }, {
         model_run_id: currentCard.model_run_id,
-        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        original_image_url: currentCard.preprocessed_output_image_url,
         feedback_notes: currentCard.feedback_notes
       })
 
@@ -1492,7 +1492,7 @@ export default function Main() {
       return "Marked as resolved"
     }, {
       model_run_id: currentCard.model_run_id,
-      original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+      original_image_url: currentCard.preprocessed_output_image_url,
       feedback_notes: currentCard.feedback_notes
     })
   }
@@ -1509,7 +1509,7 @@ export default function Main() {
         customerName: currentCard.customer_name,
         feedback: currentCard.feedback_notes,
         correctionType: 'credit-issued',
-        originalImageUrl: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        originalImageUrl: currentCard.preprocessed_output_image_url,
         correctedImageUrls: selectedImages, // allow optional attachments if selected
         isDraft: false,
         sendToCustomer: true,
@@ -1533,7 +1533,7 @@ export default function Main() {
         return r
       }, {
         model_run_id: currentCard.model_run_id,
-        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        original_image_url: currentCard.preprocessed_output_image_url,
         feedback_notes: currentCard.feedback_notes
       })
 

@@ -106,6 +106,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
   const [geminiPrompt, setGeminiPrompt] = useState(sticker.feedback_notes)
   const [openaiPrompt, setOpenaiPrompt] = useState(sticker.feedback_notes)
   const [fluxMaxPrompt, setFluxMaxPrompt] = useState(sticker.feedback_notes)
+  const [seedreamPrompt, setSeedreamPrompt] = useState(sticker.feedback_notes)
   const [includeOriginalDesign, setIncludeOriginalDesign] = useState(true)
   const [includeInputImage, setIncludeInputImage] = useState(false)
   const [additionalImages, setAdditionalImages] = useState<string[]>([])
@@ -127,6 +128,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     setGeminiPrompt(sticker.feedback_notes)
     setOpenaiPrompt(sticker.feedback_notes)
     setFluxMaxPrompt(sticker.feedback_notes)
+    setSeedreamPrompt(sticker.feedback_notes)
     
     // Try to load outputs from localStorage first, fallback to idle state
     const storedOutputs = loadOutputsFromStorage(sticker.model_run_id)
@@ -139,7 +141,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         flux: { status: 'idle' },
         gemini: { status: 'idle' },
         openai: { status: 'idle' },
-        flux_max: { status: 'idle' }
+        flux_max: { status: 'idle' },
+        seedream: { status: 'idle' }
       })
     }
     
@@ -173,8 +176,11 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       if (!fluxMaxPrompt) {
         setFluxMaxPrompt(globalPrompt)
       }
+      if (!seedreamPrompt) {
+        setSeedreamPrompt(globalPrompt)
+      }
     }
-  }, [useGlobalPrompt, globalPrompt, fluxPrompt, geminiPrompt, openaiPrompt, fluxMaxPrompt])
+  }, [useGlobalPrompt, globalPrompt, fluxPrompt, geminiPrompt, openaiPrompt, fluxMaxPrompt, seedreamPrompt])
 
   // Keyboard navigation
   useEffect(() => {
@@ -278,11 +284,12 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
   }, [internalNotes, sticker.internal_note, sticker.model_run_id])
 
   // Generate with specific tool
-  const generateWithTool = async (tool: 'flux' | 'gemini' | 'openai' | 'flux_max') => {
+  const generateWithTool = async (tool: 'flux' | 'gemini' | 'openai' | 'flux_max' | 'seedream') => {
     const prompt = useGlobalPrompt ? globalPrompt : 
                   tool === 'flux' ? fluxPrompt :
                   tool === 'gemini' ? geminiPrompt :
-                  tool === 'openai' ? openaiPrompt : fluxMaxPrompt
+                  tool === 'openai' ? openaiPrompt :
+                  tool === 'flux_max' ? fluxMaxPrompt : seedreamPrompt
 
     if (!prompt.trim()) {
       console.warn('⚠️ No prompt provided for', tool)
@@ -314,7 +321,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       // Prepare job context for JobManager UI
       const jobContext = {
         model_run_id: sticker.model_run_id,
-        original_image_url: sticker.preprocessed_output_image_url || sticker.output_image_url,
+        original_image_url: sticker.preprocessed_output_image_url,
         feedback_notes: sticker.feedback_notes
       }
 
@@ -344,20 +351,82 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           geminiFormData.append('imageUrls', imageUrls.join(','))
 
           console.log('Step 1: Calling Gemini API...')
+          
+          // 🐛 DEBUG: Log request details
+          console.group('📤 GEMINI API REQUEST DEBUG')
+          console.log('🌐 URL:', 'https://tools.makemeasticker.com/api/universal')
+          console.log('⚙️ Method:', 'POST')
+          console.log('🖼️ Images being sent:', imageUrls.length, 'images')
+          imageUrls.forEach((url, i) => console.log(`  ${i + 1}:`, url.substring(0, 100) + (url.length > 100 ? '...' : '')))
+          console.log('💬 Prompt:', prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''))
+          console.groupEnd()
+          
           const geminiResponse = await fetch('https://tools.makemeasticker.com/api/universal', {
             method: 'POST',
             body: geminiFormData
+          }).catch(networkError => {
+            console.group('🌐 NETWORK ERROR - GEMINI API')
+            console.error('❌ Network Error:', networkError)
+            console.error('🔗 Failed URL:', 'https://tools.makemeasticker.com/api/universal')
+            console.error('⏰ Timestamp:', new Date().toISOString())
+            console.groupEnd()
+            throw networkError
           })
 
-          const geminiResult = await geminiResponse.json()
-          console.log('Gemini API response:', geminiResult)
+          const geminiResult = await geminiResponse.json().catch(parseError => {
+            console.group('📝 JSON PARSE ERROR - GEMINI API')
+            console.error('❌ Parse Error:', parseError)
+            console.error('📊 Response Status:', geminiResponse.status)
+            console.error('📄 Response Text Length:', geminiResponse.body ? 'Has body' : 'No body')
+            console.groupEnd()
+            throw parseError
+          })
+          
+          // 🐛 DEBUG: Log successful response
+          console.group('📥 GEMINI API RESPONSE DEBUG')
+          console.log('✅ Status:', geminiResponse.status, geminiResponse.statusText)
+          console.log('📦 Response:', geminiResult)
+          console.log('🖼️ Has Image:', !!(geminiResult.image || geminiResult.processedImageUrl))
+          console.log('❌ Has Error:', !!geminiResult.error)
+          console.groupEnd()
 
           if (!geminiResponse.ok || geminiResult.error) {
             const errorMsg = geminiResult.error || `HTTP ${geminiResponse.status}: Failed to process with Gemini`
-            console.error('Gemini API error:', errorMsg)
-            if (geminiResult.debugInfo) {
-              console.error('Gemini debug info:', geminiResult.debugInfo)
+            
+            // 🐛 COMPREHENSIVE DEBUG LOGGING
+            console.group('🔴 GEMINI API FAILURE - FULL DEBUG INFO')
+            console.error('❌ Error Message:', errorMsg)
+            console.error('📊 Response Status:', geminiResponse.status, geminiResponse.statusText)
+            console.error('📋 Response Headers:', Object.fromEntries(geminiResponse.headers.entries()))
+            console.error('📦 Full Response Body:', geminiResult)
+            console.error('🖼️ Images Sent:', imageUrls)
+            console.error('💬 Prompt Sent:', prompt)
+            console.error('🔧 FormData Contents:')
+            for (const [key, value] of geminiFormData.entries()) {
+              if (key === 'imageUrls') {
+                console.error(`  ${key}:`, value)
+              } else {
+                console.error(`  ${key}:`, typeof value === 'string' ? value : `[${typeof value}]`)
+              }
             }
+            console.error('🌐 Request URL:', 'https://tools.makemeasticker.com/api/universal')
+            console.error('⚙️ Request Method:', 'POST')
+            
+            if (geminiResult.debugInfo) {
+              console.error('🔍 API Debug Info:', geminiResult.debugInfo)
+            }
+            
+            // Additional debugging for image URLs
+            console.error('🖼️ Image URL Analysis:')
+            imageUrls.forEach((url, index) => {
+              console.error(`  Image ${index + 1}:`, url)
+              console.error(`    Length: ${url.length} chars`)
+              console.error(`    Protocol: ${url.startsWith('https://') ? 'HTTPS' : url.startsWith('http://') ? 'HTTP' : 'OTHER'}`)
+              console.error(`    Domain: ${url.split('/')[2] || 'UNKNOWN'}`)
+            })
+            
+            console.groupEnd()
+            
             throw new Error(errorMsg)
           }
 
@@ -385,10 +454,27 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
 
           if (!postProcessResponse.ok || postProcessResult.error) {
             const errorMsg = postProcessResult.error || `HTTP ${postProcessResponse.status}: Failed to post-process image`
-            console.error('PostProcess API error:', errorMsg)
-            if (postProcessResult.debugInfo) {
-              console.error('PostProcess debug info:', postProcessResult.debugInfo)
+            
+            // 🐛 COMPREHENSIVE DEBUG LOGGING FOR POSTPROCESS
+            console.group('🔴 POSTPROCESS API FAILURE - FULL DEBUG INFO')
+            console.error('❌ Error Message:', errorMsg)
+            console.error('📊 Response Status:', postProcessResponse.status, postProcessResponse.statusText)
+            console.error('📋 Response Headers:', Object.fromEntries(postProcessResponse.headers.entries()))
+            console.error('📦 Full Response Body:', postProcessResult)
+            console.error('🖼️ Input Image URL:', geminiImageUrl)
+            console.error('🔧 FormData Contents:')
+            for (const [key, value] of postProcessFormData.entries()) {
+              console.error(`  ${key}:`, typeof value === 'string' ? value : `[${typeof value}]`)
             }
+            console.error('🌐 Request URL:', 'https://tools.makemeasticker.com/api/universal')
+            console.error('⚙️ Request Method:', 'POST')
+            
+            if (postProcessResult.debugInfo) {
+              console.error('🔍 API Debug Info:', postProcessResult.debugInfo)
+            }
+            
+            console.groupEnd()
+            
             throw new Error(errorMsg)
           }
 
@@ -413,17 +499,46 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           // Add each imageUrl separately
           imageUrls.forEach(url => formData.append('imageUrls', url))
 
+          // 🐛 DEBUG: Log OpenAI request
+          console.group('📤 OPENAI API REQUEST DEBUG')
+          console.log('🌐 URL:', '/api/gpt-image-1')
+          console.log('🖼️ Images:', imageUrls.length, 'images')
+          console.log('💬 Prompt:', prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''))
+          console.groupEnd()
+
           const response = await fetch('/api/gpt-image-1', {
             method: 'POST',
             body: formData
+          }).catch(networkError => {
+            console.group('🌐 NETWORK ERROR - OPENAI API')
+            console.error('❌ Network Error:', networkError)
+            console.error('🔗 Failed URL:', '/api/gpt-image-1')
+            console.groupEnd()
+            throw networkError
           })
 
           if (!response.ok) {
+            console.group('🔴 OPENAI API FAILURE')
+            console.error('📊 Status:', response.status, response.statusText)
+            console.error('📋 Headers:', Object.fromEntries(response.headers.entries()))
+            console.groupEnd()
             throw new Error(`HTTP ${response.status}: Failed to process with OpenAI GPT Image 1`)
           }
 
           const result = await response.json()
+          
+          // 🐛 DEBUG: Log OpenAI response
+          console.group('📥 OPENAI API RESPONSE DEBUG')
+          console.log('✅ Success:', result.success)
+          console.log('📦 Full Result:', result)
+          console.log('🖼️ Has Image:', !!(result.data?.image))
+          console.groupEnd()
+
           if (!result.success || !result.data?.image) {
+            console.group('🔴 OPENAI API ERROR DETAILS')
+            console.error('❌ Error:', result.error)
+            console.error('📦 Full Response:', result)
+            console.groupEnd()
             throw new Error(result.error || 'No image returned from OpenAI GPT Image 1')
           }
 
@@ -436,8 +551,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           
           // For Flux Max, only use the original artwork (top input image)
           // Ignore the photo below it and any uploaded images
-          if (sticker.output_image_url) {
-            formData.append('imageUrls', sticker.output_image_url)
+          if (sticker.preprocessed_output_image_url) {
+            formData.append('imageUrls', sticker.preprocessed_output_image_url)
           } else {
             throw new Error('No original artwork available for Flux Max processing')
           }
@@ -458,13 +573,69 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
 
           return { 
             imageUrl: result.data.imageUrl, 
-            inputImages: sticker.output_image_url ? [sticker.output_image_url] : [] 
+            inputImages: sticker.preprocessed_output_image_url ? [sticker.preprocessed_output_image_url] : [] 
           }
+
+        } else if (tool === 'seedream') {
+          // Use our SeeDream v4 Edit API
+          const formData = new FormData()
+          formData.append('prompt', prompt)
+          
+          // Collect image URLs using the custom ordering from ImageNode
+          const imageUrls: string[] = getOrderedImagesForAPI ? getOrderedImagesForAPI() : []
+          
+          // Add each imageUrl separately
+          imageUrls.forEach(url => formData.append('imageUrls', url))
+
+          // 🐛 DEBUG: Log SeeDream request
+          console.group('📤 SEEDREAM API REQUEST DEBUG')
+          console.log('🌐 URL:', '/api/seedream-edit')
+          console.log('🖼️ Images:', imageUrls.length, 'images')
+          console.log('💬 Prompt:', prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''))
+          console.groupEnd()
+
+          const response = await fetch('/api/seedream-edit', {
+            method: 'POST',
+            body: formData
+          }).catch(networkError => {
+            console.group('🌐 NETWORK ERROR - SEEDREAM API')
+            console.error('❌ Network Error:', networkError)
+            console.error('🔗 Failed URL:', '/api/seedream-edit')
+            console.groupEnd()
+            throw networkError
+          })
+
+          if (!response.ok) {
+            console.group('🔴 SEEDREAM API FAILURE')
+            console.error('📊 Status:', response.status, response.statusText)
+            console.error('📋 Headers:', Object.fromEntries(response.headers.entries()))
+            console.groupEnd()
+            throw new Error(`HTTP ${response.status}: Failed to process with SeeDream v4 Edit`)
+          }
+
+          const result = await response.json()
+          
+          // 🐛 DEBUG: Log SeeDream response
+          console.group('📥 SEEDREAM API RESPONSE DEBUG')
+          console.log('✅ Success:', result.success)
+          console.log('📦 Full Result:', result)
+          console.log('🖼️ Has Image:', !!(result.data?.imageUrl))
+          console.groupEnd()
+
+          if (!result.success || !result.data?.imageUrl) {
+            console.group('🔴 SEEDREAM API ERROR DETAILS')
+            console.error('❌ Error:', result.error)
+            console.error('📦 Full Response:', result)
+            console.groupEnd()
+            throw new Error(result.error || 'No image returned from SeeDream v4 Edit')
+          }
+
+          return { imageUrl: result.data.imageUrl, inputImages: imageUrls }
 
         } else {
           // TODO: Implement other tools (flux)
           await new Promise(resolve => setTimeout(resolve, 3000))
-          return { imageUrl: sticker.output_image_url, inputImages: [] }
+          return { imageUrl: sticker.preprocessed_output_image_url, inputImages: [] }
         }
       }, jobContext)
 
@@ -513,6 +684,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       'gemini-output': { x: 750, y: 250 },
       'openai-output': { x: 750, y: 320 },
       'flux-max-output': { x: 750, y: 390 },
+      'seedream-output': { x: 750, y: 460 },
       'email-composer': { x: 1100, y: 250 },
       'internal-1': { x: 50, y: 500 },
       'user-info-1': { x: 50, y: 670 }
@@ -527,6 +699,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       'gemini-output': outputs.gemini?.imageUrl ? 400 : 150, // Expanded when has image
       'openai-output': outputs.openai?.imageUrl ? 400 : 150,
       'flux-max-output': outputs.flux_max?.imageUrl ? 400 : 150,
+      'seedream-output': outputs.seedream?.imageUrl ? 400 : 150,
       'email-composer': 300
     }
 
@@ -546,9 +719,16 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       basePositions['flux-max-output'].y,
       openaiBottom + 10 // 10px gap
     )
+    
+    // Adjust SeeDream position based on Flux Max height
+    const fluxMaxBottom = adjustedPositions['flux-max-output'].y + nodeHeights['flux-max-output']
+    adjustedPositions['seedream-output'].y = Math.max(
+      basePositions['seedream-output'].y,
+      fluxMaxBottom + 10 // 10px gap
+    )
 
     return adjustedPositions
-  }, [outputs.gemini?.imageUrl, outputs.openai?.imageUrl, outputs.flux_max?.imageUrl])
+  }, [outputs.gemini?.imageUrl, outputs.openai?.imageUrl, outputs.flux_max?.imageUrl, outputs.seedream?.imageUrl])
 
   const initialNodes: Node[] = useMemo(() => [
     {
@@ -709,6 +889,32 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         },
     },
     {
+      id: 'seedream-output',
+      type: 'outputNode',
+      position: nodePositions['seedream-output'],
+        data: { 
+          title: 'SeeDream',
+          tool: 'seedream',
+          output: outputs.seedream,
+          onGenerate: () => generateWithTool('seedream'),
+          onAttachToEmail: (imageUrl: string) => {
+            console.log('Attaching SeeDream image:', imageUrl)
+            if (!selectedImages.includes(imageUrl)) {
+              setSelectedImages(prev => [...prev, imageUrl])
+            }
+            setAttachedNodes(prev => {
+              const newSet = new Set([...prev, 'seedream-output'])
+              console.log('Updated attached nodes:', Array.from(newSet))
+              return newSet
+            })
+          },
+          onClear: () => clearOutput('seedream'),
+          useGlobalPrompt,
+          individualPrompt: seedreamPrompt,
+          onPromptChange: setSeedreamPrompt,
+        },
+    },
+    {
       id: 'email-composer',
       type: 'emailComposerNode',
       position: nodePositions['email-composer'],
@@ -743,6 +949,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           const geminiImage = outputs.gemini?.imageUrl
           const openaiImage = outputs.openai?.imageUrl
           const fluxMaxImage = outputs.flux_max?.imageUrl
+          const seedreamImage = outputs.seedream?.imageUrl
           
           setAttachedNodes(prev => {
             const newSet = new Set(prev)
@@ -750,13 +957,14 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
             if (imageUrl === geminiImage) newSet.delete('gemini-output')
             if (imageUrl === openaiImage) newSet.delete('openai-output')
             if (imageUrl === fluxMaxImage) newSet.delete('flux-max-output')
+            if (imageUrl === seedreamImage) newSet.delete('seedream-output')
             console.log('Updated attached nodes after detach:', Array.from(newSet))
             return newSet
           })
         },
       },
     },
-  ], [globalPrompt, useGlobalPrompt, fluxPrompt, geminiPrompt, openaiPrompt, fluxMaxPrompt, includeOriginalDesign, includeInputImage, additionalImages, internalNotes, outputs, sticker, selectedImages, isSendingEmail, isSendingCreditEmail, emailMode, attachedNodes, onNext, nodePositions])
+  ], [globalPrompt, useGlobalPrompt, fluxPrompt, geminiPrompt, openaiPrompt, fluxMaxPrompt, seedreamPrompt, includeOriginalDesign, includeInputImage, additionalImages, internalNotes, outputs, sticker, selectedImages, isSendingEmail, isSendingCreditEmail, emailMode, attachedNodes, onNext, nodePositions])
 
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [
@@ -765,6 +973,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       { id: 'prompt-gemini', source: 'prompt-1', target: 'gemini-output', animated: true, style: { stroke: '#f97316' } },
       { id: 'prompt-openai', source: 'prompt-1', target: 'openai-output', animated: true, style: { stroke: '#10b981' } },
       { id: 'prompt-flux-max', source: 'prompt-1', target: 'flux-max-output', animated: true, style: { stroke: '#6d28d9' } },
+      { id: 'prompt-seedream', source: 'prompt-1', target: 'seedream-output', animated: true, style: { stroke: '#e11d48' } },
     ]
 
     // Add image edges if enabled
@@ -773,7 +982,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         { id: 'images-flux', source: 'images-1', target: 'flux-output', animated: true, style: { stroke: '#3b82f6' } },
         { id: 'images-gemini', source: 'images-1', target: 'gemini-output', animated: true, style: { stroke: '#3b82f6' } },
         { id: 'images-openai', source: 'images-1', target: 'openai-output', animated: true, style: { stroke: '#3b82f6' } },
-        { id: 'images-flux-max', source: 'images-1', target: 'flux-max-output', animated: true, style: { stroke: '#3b82f6' } }
+        { id: 'images-flux-max', source: 'images-1', target: 'flux-max-output', animated: true, style: { stroke: '#3b82f6' } },
+        { id: 'images-seedream', source: 'images-1', target: 'seedream-output', animated: true, style: { stroke: '#3b82f6' } }
       )
     }
 
@@ -818,6 +1028,16 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         target: 'email-composer', 
         animated: true, 
         style: { stroke: '#6d28d9', strokeWidth: 3, strokeDasharray: '8,4' } 
+      })
+    }
+    if (attachedNodes.has('seedream-output')) {
+      console.log('Adding SeeDream → Email edge')
+      edges.push({ 
+        id: 'seedream-email', 
+        source: 'seedream-output', 
+        target: 'email-composer', 
+        animated: true, 
+        style: { stroke: '#e11d48', strokeWidth: 3, strokeDasharray: '8,4' } 
       })
     }
     

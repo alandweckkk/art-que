@@ -41,7 +41,7 @@ export const sendFixedArtwork = async (
       customerName: sticker.customer_name,
       feedback: sticker.feedback_notes,
       correctionType: 'manual-correction',
-      originalImageUrl: sticker.preprocessed_output_image_url || sticker.output_image_url,
+      originalImageUrl: sticker.preprocessed_output_image_url,
       correctedImageUrls: selectedImages,
       isDraft: false,
       sendToCustomer: true,
@@ -68,7 +68,7 @@ export const sendFixedArtwork = async (
       return r
     }, {
       model_run_id: sticker.model_run_id,
-      original_image_url: sticker.preprocessed_output_image_url || sticker.output_image_url,
+      original_image_url: sticker.preprocessed_output_image_url,
       selected_images: selectedImages
     })
 
@@ -113,7 +113,7 @@ export const markAsResolved = async (sticker: StickerEdit) => {
     return "Marked as resolved"
   }, {
     model_run_id: sticker.model_run_id,
-    original_image_url: sticker.preprocessed_output_image_url || sticker.output_image_url,
+    original_image_url: sticker.preprocessed_output_image_url,
     selected_images: []
   })
 }
@@ -136,7 +136,7 @@ export const sendCreditEmail = async (
       customerName: sticker.customer_name,
       feedback: sticker.feedback_notes,
       correctionType: 'credit-issued',
-      originalImageUrl: sticker.preprocessed_output_image_url || sticker.output_image_url,
+      originalImageUrl: sticker.preprocessed_output_image_url,
       correctedImageUrls: selectedImages, // allow optional attachments if selected
       isDraft: false,
       sendToCustomer: true,
@@ -164,7 +164,7 @@ export const sendCreditEmail = async (
       return r
     }, {
       model_run_id: sticker.model_run_id,
-      original_image_url: sticker.preprocessed_output_image_url || sticker.output_image_url,
+      original_image_url: sticker.preprocessed_output_image_url,
       selected_images: selectedImages
     })
 

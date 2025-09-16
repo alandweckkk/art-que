@@ -26,7 +26,7 @@ export default function EditingWorkspace({ selectedSticker, onClose }: EditingWo
       type: 'original',
       x: 100,
       y: 200,
-      imageUrl: selectedSticker.output_image_url,
+      imageUrl: selectedSticker.preprocessed_output_image_url,
       status: 'completed',
       timestamp: new Date()
     }
@@ -58,7 +58,7 @@ export default function EditingWorkspace({ selectedSticker, onClose }: EditingWo
     setTimeout(() => {
       setNodes(prev => prev.map(node => 
         node.id === newNode.id 
-          ? { ...node, status: 'completed' as const, imageUrl: selectedSticker.output_image_url }
+          ? { ...node, status: 'completed' as const, imageUrl: selectedSticker.preprocessed_output_image_url }
           : node
       ))
       setIsGenerating(false)

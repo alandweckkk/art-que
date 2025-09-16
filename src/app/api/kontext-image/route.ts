@@ -53,31 +53,9 @@ export async function POST(request: NextRequest) {
       console.warn('⚠️ Could not verify mask:', error);
     }
 
-    // Prepare image on a white background the same size as the image
-    console.log('🎨 Preparing image on white background...');
-    let flattenedImageUrl = imageUrl;
-    try {
-      const imgResp = await fetch(imageUrl);
-      if (!imgResp.ok) throw new Error(`Failed to download image: ${imgResp.status}`);
-      const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
-
-      // Lazy import sharp to avoid bundling issues
-      const sharp = (await import('sharp')).default;
-      const flattenedBuffer = await sharp(imgBuffer)
-        .flatten({ background: '#ffffff' }) // ensure white background where transparent
-        .png()
-        .toBuffer();
-
-      const flatFilename = `kontext-flat-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-      const flatBlob = await put(flatFilename, flattenedBuffer, {
-        access: 'public',
-        contentType: 'image/png',
-      });
-      flattenedImageUrl = flatBlob.url;
-      console.log('✅ Flattened image uploaded to:', flattenedImageUrl);
-    } catch (e) {
-      console.warn('⚠️ Could not flatten image, proceeding with original URL:', e);
-    }
+    // Use the original image directly without flattening
+    console.log('🎨 Using original image without background processing...');
+    const flattenedImageUrl = imageUrl;
 
     // Configure Fal.AI client
     const falApiKey = process.env.FAL_KEY;

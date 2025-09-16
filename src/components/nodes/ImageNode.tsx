@@ -217,8 +217,8 @@ export default function ImageNode({ data }: ImageNodeProps) {
   const getOrderedImagesForAPI = () => {
     const orderedUrls: string[] = []
     imageOrder.forEach(item => {
-      if (item.type === 'original' && includeOriginalDesign && sticker.output_image_url) {
-        orderedUrls.push(sticker.output_image_url)
+      if (item.type === 'original' && includeOriginalDesign && sticker.preprocessed_output_image_url) {
+        orderedUrls.push(sticker.preprocessed_output_image_url)
       } else if (item.type === 'input' && includeInputImage && sticker.input_image_url) {
         orderedUrls.push(sticker.input_image_url)
       } else if (item.type === 'additional' && item.index !== undefined && selectedAdditionalImages.has(additionalImages[item.index])) {
