@@ -3,7 +3,7 @@
 import { Handle, Position } from '@xyflow/react'
 import { StickerEdit } from '@/types/sticker'
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Settings, ChevronUp, ChevronDown } from 'lucide-react'
 
 interface ImageNodeData {
   sticker: StickerEdit
@@ -13,6 +13,8 @@ interface ImageNodeData {
   setIncludeInputImage: (value: boolean) => void
   additionalImages: string[]
   setAdditionalImages: (images: string[]) => void
+  getOrderedImagesForAPI?: () => string[]
+  setGetOrderedImagesForAPI?: (fn: () => string[]) => void
 }
 
 interface ImageNodeProps {
@@ -20,19 +22,48 @@ interface ImageNodeProps {
 }
 
 export default function ImageNode({ data }: ImageNodeProps) {
-  const { sticker, includeOriginalDesign, setIncludeOriginalDesign, includeInputImage, setIncludeInputImage, additionalImages, setAdditionalImages } = data
+  const { sticker, includeOriginalDesign, setIncludeOriginalDesign, includeInputImage, setIncludeInputImage, additionalImages, setAdditionalImages, setGetOrderedImagesForAPI } = data
   
   // Local state for UI only
   const [isUploading, setIsUploading] = useState(false)
   const [selectedAdditionalImages, setSelectedAdditionalImages] = useState<Set<string>>(new Set(additionalImages))
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [pastedImage, setPastedImage] = useState<File | null>(null)
+  const [isReorderMode, setIsReorderMode] = useState(false)
+  
+  // Create a unified image order - this represents the visual and sending order
+  const [imageOrder, setImageOrder] = useState<Array<{type: 'original' | 'input' | 'additional', index?: number}>>(() => {
+    const order = []
+    if (sticker.preprocessed_output_image_url) order.push({ type: 'original' as const })
+    if (sticker.input_image_url) order.push({ type: 'input' as const })
+    additionalImages.forEach((_, index) => order.push({ type: 'additional' as const, index }))
+    return order
+  })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Sync selected additional images when additionalImages changes
   useEffect(() => {
     setSelectedAdditionalImages(new Set(additionalImages))
   }, [additionalImages])
+
+  // Update imageOrder when additionalImages changes (from template URLs, etc.)
+  useEffect(() => {
+    setImageOrder(prevOrder => {
+      // Keep existing original and input positions, update additional images
+      const newOrder = prevOrder.filter(item => item.type !== 'additional')
+      additionalImages.forEach((_, index) => {
+        newOrder.push({ type: 'additional', index })
+      })
+      return newOrder
+    })
+  }, [additionalImages])
+
+  // Expose the getOrderedImagesForAPI function to parent component
+  useEffect(() => {
+    if (setGetOrderedImagesForAPI) {
+      setGetOrderedImagesForAPI(() => getOrderedImagesForAPI)
+    }
+  }, [setGetOrderedImagesForAPI, imageOrder, includeOriginalDesign, includeInputImage, selectedAdditionalImages])
 
   const handleImageUpload = async (file: File) => {
     if (additionalImages.length >= 8) return // Max 10 total (2 existing + 8 additional)
@@ -147,11 +178,70 @@ export default function ImageNode({ data }: ImageNodeProps) {
     })
   }
 
+  // Unified reorder functions
+  const moveImageUp = (orderIndex: number) => {
+    if (orderIndex === 0) {
+      // First image moving up - goes to bottom
+      const newOrder = [...imageOrder]
+      const imageToMove = newOrder.shift()!
+      newOrder.push(imageToMove)
+      setImageOrder(newOrder)
+      return
+    }
+    // Swap with previous image
+    const newOrder = [...imageOrder]
+    const temp = newOrder[orderIndex]
+    newOrder[orderIndex] = newOrder[orderIndex - 1]
+    newOrder[orderIndex - 1] = temp
+    setImageOrder(newOrder)
+  }
+
+  const moveImageDown = (orderIndex: number) => {
+    if (orderIndex === imageOrder.length - 1) {
+      // Last image moving down - goes to top
+      const newOrder = [...imageOrder]
+      const imageToMove = newOrder.pop()!
+      newOrder.unshift(imageToMove)
+      setImageOrder(newOrder)
+      return
+    }
+    // Swap with next image
+    const newOrder = [...imageOrder]
+    const temp = newOrder[orderIndex]
+    newOrder[orderIndex] = newOrder[orderIndex + 1]
+    newOrder[orderIndex + 1] = temp
+    setImageOrder(newOrder)
+  }
+
+  // Get the ordered images for API calls
+  const getOrderedImagesForAPI = () => {
+    const orderedUrls: string[] = []
+    imageOrder.forEach(item => {
+      if (item.type === 'original' && includeOriginalDesign && sticker.output_image_url) {
+        orderedUrls.push(sticker.output_image_url)
+      } else if (item.type === 'input' && includeInputImage && sticker.input_image_url) {
+        orderedUrls.push(sticker.input_image_url)
+      } else if (item.type === 'additional' && item.index !== undefined && selectedAdditionalImages.has(additionalImages[item.index])) {
+        orderedUrls.push(additionalImages[item.index])
+      }
+    })
+    return orderedUrls
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2 w-80">
       {/* Header */}
       <div className="flex items-center justify-between mb-2 px-2">
-        <div className="text-sm font-medium text-gray-800">Input Images</div>
+        <div className="flex items-center gap-2">
+          <div className="text-sm font-medium text-gray-800">Input Images</div>
+          <button
+            onClick={() => setIsReorderMode(!isReorderMode)}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+            title="Reorder images"
+          >
+            <Settings size={14} />
+          </button>
+        </div>
         {additionalImages.length < 8 && (
           <button 
             className="text-gray-600 hover:text-gray-800 text-xs flex items-center gap-1 px-2 py-1 hover:bg-gray-50 rounded transition-colors"
@@ -170,119 +260,190 @@ export default function ImageNode({ data }: ImageNodeProps) {
       </div>
       
       <div className="space-y-2">
-        {/* Additional Input Images - Show at top */}
-        {console.log('Rendering additionalImages:', additionalImages)}
-        {additionalImages.map((imageUrl, index) => {
-          const isSelected = selectedAdditionalImages.has(imageUrl)
-          return (
-            <div key={imageUrl} className="relative">
-              <div 
-                className={`w-full rounded-lg p-1 cursor-pointer transition-all ${
-                  isSelected 
-                    ? 'bg-blue-500 shadow-lg shadow-blue-500/30' 
-                    : 'bg-gray-200 hover:bg-gray-300'
-                }`}
-                onClick={() => toggleAdditionalImageSelection(imageUrl)}
-              >
+        {/* Render images in the order specified by imageOrder */}
+        {imageOrder.map((item, orderIndex) => {
+          if (item.type === 'original' && sticker.preprocessed_output_image_url) {
+            return (
+              <div key="original" className="relative">
                 <div 
-                  className="w-full aspect-square rounded flex items-center justify-center overflow-hidden"
-                  style={{
-                    backgroundImage: `repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%)`,
-                    backgroundSize: '20px 20px'
-                  }}
+                  className={`w-full rounded-lg cursor-pointer transition-all ${
+                    includeOriginalDesign 
+                      ? 'ring-2 ring-blue-400 bg-gray-50' 
+                      : 'bg-gray-200 hover:bg-gray-300'
+                  }`}
+                  onClick={() => setIncludeOriginalDesign(!includeOriginalDesign)}
                 >
-                  <img 
-                    src={imageUrl} 
-                    alt={`Additional input ${index + 1}`}
-                    className="max-w-full max-h-full object-contain"
-                    draggable={false}
-                  />
+                  <div 
+                    className="w-full aspect-square rounded flex items-center justify-center overflow-hidden p-1"
+                    style={{
+                      backgroundImage: `repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%)`,
+                      backgroundSize: '20px 20px'
+                    }}
+                  >
+                    <img 
+                      src={sticker.preprocessed_output_image_url} 
+                      alt="Original design"
+                      className="max-w-full max-h-full object-contain"
+                      draggable={false}
+                    />
+                  </div>
                 </div>
+                {/* Reorder arrows */}
+                {isReorderMode && (
+                  <div className="absolute top-1 left-1 flex flex-col gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        moveImageUp(orderIndex)
+                      }}
+                      className="w-5 h-5 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-200"
+                      title="Move up"
+                    >
+                      <ChevronUp size={10} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        moveImageDown(orderIndex)
+                      }}
+                      className="w-5 h-5 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-200"
+                      title="Move down"
+                    >
+                      <ChevronDown size={10} />
+                    </button>
+                  </div>
+                )}
               </div>
-              {isSelected && (
-                <div className="absolute top-2 right-2 w-3 h-3 bg-blue-500 rounded-full shadow-lg"></div>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  removeAdditionalImage(index)
-                }}
-                className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
-                title="Remove image"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )
+            )
+          }
+
+          if (item.type === 'input' && sticker.input_image_url) {
+            return (
+              <div key="input" className="relative">
+                <div 
+                  className={`w-full rounded-lg cursor-pointer transition-all ${
+                    includeInputImage 
+                      ? 'ring-2 ring-blue-400 bg-gray-50' 
+                      : 'bg-gray-200 hover:bg-gray-300'
+                  }`}
+                  onClick={() => setIncludeInputImage(!includeInputImage)}
+                >
+                  <div 
+                    className="w-full aspect-square rounded flex items-center justify-center overflow-hidden p-1"
+                    style={{
+                      backgroundImage: `repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%)`,
+                      backgroundSize: '20px 20px'
+                    }}
+                  >
+                    <img 
+                      src={sticker.input_image_url} 
+                      alt="Input photo"
+                      className="max-w-full max-h-full object-contain"
+                      draggable={false}
+                    />
+                  </div>
+                </div>
+                {/* Reorder arrows */}
+                {isReorderMode && (
+                  <div className="absolute top-1 left-1 flex flex-col gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        moveImageUp(orderIndex)
+                      }}
+                      className="w-5 h-5 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-200"
+                      title="Move up"
+                    >
+                      <ChevronUp size={10} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        moveImageDown(orderIndex)
+                      }}
+                      className="w-5 h-5 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-200"
+                      title="Move down"
+                    >
+                      <ChevronDown size={10} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          }
+
+          if (item.type === 'additional' && item.index !== undefined && additionalImages[item.index]) {
+            const imageUrl = additionalImages[item.index]
+            const isSelected = selectedAdditionalImages.has(imageUrl)
+            return (
+              <div key={`additional-${item.index}`} className="relative">
+                <div 
+                  className={`w-full rounded-lg cursor-pointer transition-all ${
+                    isSelected 
+                      ? 'ring-2 ring-blue-400 bg-gray-50' 
+                      : 'bg-gray-200 hover:bg-gray-300'
+                  }`}
+                  onClick={() => toggleAdditionalImageSelection(imageUrl)}
+                >
+                  <div 
+                    className="w-full aspect-square rounded flex items-center justify-center overflow-hidden p-1"
+                    style={{
+                      backgroundImage: `repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%)`,
+                      backgroundSize: '20px 20px'
+                    }}
+                  >
+                    <img 
+                      src={imageUrl} 
+                      alt={`Additional input ${item.index + 1}`}
+                      className="max-w-full max-h-full object-contain"
+                      draggable={false}
+                    />
+                  </div>
+                </div>
+                {/* Remove button - only show when not in reorder mode */}
+                {!isReorderMode && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeAdditionalImage(item.index!)
+                    }}
+                    className="absolute top-1 right-1 w-4 h-4 bg-gray-400 text-white rounded-full flex items-center justify-center hover:bg-gray-500 transition-colors"
+                    title="Remove image"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                )}
+                {/* Reorder arrows */}
+                {isReorderMode && (
+                  <div className="absolute top-1 left-1 flex flex-col gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        moveImageUp(orderIndex)
+                      }}
+                      className="w-5 h-5 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-200"
+                      title="Move up"
+                    >
+                      <ChevronUp size={10} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        moveImageDown(orderIndex)
+                      }}
+                      className="w-5 h-5 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-200"
+                      title="Move down"
+                    >
+                      <ChevronDown size={10} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          }
+
+          return null
         })}
-
-        {/* Original Design Image */}
-        <div className="relative">
-          <div 
-            className={`w-full rounded-lg p-1 cursor-pointer transition-all ${
-              includeOriginalDesign 
-                ? 'bg-blue-500 shadow-lg shadow-blue-500/30' 
-                : 'bg-gray-200 hover:bg-gray-300'
-            }`}
-            onClick={() => setIncludeOriginalDesign(!includeOriginalDesign)}
-          >
-            <div 
-              className="w-full aspect-square rounded flex items-center justify-center overflow-hidden"
-              style={{
-                backgroundImage: `repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%)`,
-                backgroundSize: '20px 20px'
-              }}
-            >
-              {sticker.preprocessed_output_image_url ? (
-                <img 
-                  src={sticker.preprocessed_output_image_url} 
-                  alt="Original design"
-                  className="max-w-full max-h-full object-contain"
-                  draggable={false}
-                />
-              ) : (
-                <div className="text-gray-600 text-sm bg-white/80 px-2 py-1 rounded">No image</div>
-              )}
-            </div>
-          </div>
-          {includeOriginalDesign && (
-            <div className="absolute top-2 right-2 w-3 h-3 bg-blue-500 rounded-full shadow-lg"></div>
-          )}
-        </div>
-
-        {/* Input Photo Image */}
-        <div className="relative">
-          <div 
-            className={`w-full rounded-lg p-1 cursor-pointer transition-all ${
-              includeInputImage 
-                ? 'bg-blue-500 shadow-lg shadow-blue-500/30' 
-                : 'bg-gray-200 hover:bg-gray-300'
-            }`}
-            onClick={() => setIncludeInputImage(!includeInputImage)}
-          >
-            <div 
-              className="w-full aspect-square rounded flex items-center justify-center overflow-hidden"
-              style={{
-                backgroundImage: `repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%)`,
-                backgroundSize: '20px 20px'
-              }}
-            >
-              {sticker.input_image_url ? (
-                <img 
-                  src={sticker.input_image_url} 
-                  alt="Input photo"
-                  className="max-w-full max-h-full object-contain"
-                  draggable={false}
-                />
-              ) : (
-                <div className="text-gray-600 text-sm bg-white/80 px-2 py-1 rounded">No image</div>
-              )}
-            </div>
-          </div>
-          {includeInputImage && (
-            <div className="absolute top-2 right-2 w-3 h-3 bg-blue-500 rounded-full shadow-lg"></div>
-          )}
-        </div>
       </div>
 
       {/* Hidden file input */}

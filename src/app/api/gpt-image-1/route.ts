@@ -22,47 +22,60 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    if (imageUrls.length > 6) {
+      console.error('❌ Too many image URLs provided');
+      return NextResponse.json({ 
+        error: 'GPT Image tool supports maximum 6 images' 
+      }, { status: 400 });
+    }
+
     console.log('📝 Processing OpenAI GPT Image request:');
     console.log('   - Prompt:', prompt);
     console.log('   - Image URLs:', imageUrls);
 
-    // Prepare form data for the universal API call (like Gemini does)
+    // Prepare form data for the Universal API call
     const universalFormData = new FormData();
     universalFormData.append('tool', 'gpt-image-1');
     universalFormData.append('prompt', prompt);
     universalFormData.append('imageUrls', imageUrls.join(','));
+    universalFormData.append('debug', 'true'); // Enable debug for better error info
 
-    console.log('🚀 Making request to universal API...');
+    console.log('🚀 Making request to Universal API...');
     
-    // Make the request to the universal API (same as original working approach)
+    // Make the request to the Universal API
     const universalResponse = await fetch('https://tools.makemeasticker.com/api/universal', {
       method: 'POST',
       body: universalFormData,
     });
 
-    if (!universalResponse.ok) {
-      console.error('❌ Universal API request failed:', universalResponse.status, universalResponse.statusText);
-      return NextResponse.json({ 
-        error: `Universal API request failed: ${universalResponse.status} ${universalResponse.statusText}` 
-      }, { status: universalResponse.status });
-    }
-
     const universalResult = await universalResponse.json();
     console.log('✅ Universal API response received:', universalResult);
 
-    if (!universalResult.image) {
-      console.error('❌ No image in universal API response');
+    if (!universalResponse.ok || universalResult.error) {
+      const errorMsg = universalResult.error || `HTTP ${universalResponse.status}: Failed to process with GPT Image 1`
+      console.error('❌ Universal API error:', errorMsg);
+      if (universalResult.debugInfo) {
+        console.error('❌ Debug info:', universalResult.debugInfo);
+      }
       return NextResponse.json({ 
-        error: 'No image returned from universal API' 
+        error: errorMsg
+      }, { status: universalResponse.status });
+    }
+
+    if (!universalResult.image && !universalResult.processedImageUrl) {
+      console.error('❌ No image in Universal API response');
+      return NextResponse.json({ 
+        error: 'No image returned from Universal API' 
       }, { status: 500 });
     }
 
-    console.log('✅ OpenAI GPT Image completed successfully');
+    const resultImageUrl = universalResult.image || universalResult.processedImageUrl;
+    console.log('✅ OpenAI GPT Image completed successfully:', resultImageUrl);
 
     return NextResponse.json({
       success: true,
       data: {
-        image: universalResult.image,
+        image: resultImageUrl,
         originalPrompt: prompt,
         inputImageUrls: imageUrls
       }

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import dynamic from 'next/dynamic'
+import { supabase } from '@/lib/supabase'
 import { 
   Send, 
   ChevronDown, 
@@ -16,7 +17,9 @@ import {
   Edit3,
   Calendar,
   MoreHorizontal,
-  Trash2
+  Trash2,
+  Upload,
+  ImageIcon
 } from 'lucide-react'
 
 // Dynamically import ReactQuill to avoid SSR issues
@@ -30,9 +33,10 @@ interface EmailComposerNodeData {
   customerName: string
   userId: string
   selectedImages: string[]
-  onSend: (emailData?: { toEmail?: string; subject?: string; body?: string }) => void
+  onSend: (emailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string }) => void
   isSending: boolean
   onDetachImage?: (imageUrl: string) => void
+  onAttachImage?: (imageUrl: string) => void
   emailMode?: 'artwork' | 'credit'
 }
 
@@ -41,13 +45,15 @@ interface EmailComposerNodeProps {
 }
 
 export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
-  const { customerEmail, customerName, userId, selectedImages, onSend, isSending, onDetachImage, emailMode = 'artwork' } = data
+  const { customerEmail, customerName, userId, selectedImages, onSend, isSending, onDetachImage, onAttachImage, emailMode = 'artwork' } = data
   const [showUidPopover, setShowUidPopover] = useState(false)
   const [showSendDropdown, setShowSendDropdown] = useState(false)
   const [showNoImagesPopover, setShowNoImagesPopover] = useState(false)
   const [sendStatus, setSendStatus] = useState<'sent' | 'failed' | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const noImagesPopoverRef = useRef<HTMLDivElement>(null)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
   
   // Quill editor configuration - minimal setup
   const quillModules = {
@@ -80,8 +86,8 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     return processed;
   }
   
-  // Editable email fields state
-  const [toEmail, setToEmail] = useState(customerEmail)
+  // Editable email fields state - start empty and populate async
+  const [toEmail, setToEmail] = useState('')
   const [subject, setSubject] = useState(
     emailMode === 'credit' 
       ? "We've Added a Free Credit to Your Account" 
@@ -93,7 +99,43 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
       : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can click here to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
   )
   
+  // Conversation threading state
+  const [conversationId, setConversationId] = useState('')
+  const [messageId, setMessageId] = useState('')
+  
   const isCreditMode = emailMode === 'credit'
+
+  // Fetch user email directly from database
+  useEffect(() => {
+    const loadEmail = async () => {
+      if (!userId) return
+
+      try {
+        // Get user_id from model_run, then email from users_populated
+        const { data: modelRun } = await supabase
+          .from('model_run')
+          .select('user_id')
+          .eq('id', userId)
+          .single()
+
+        if (modelRun?.user_id) {
+          const { data: user } = await supabase
+            .from('users_populated')
+            .select('email')
+            .eq('id', modelRun.user_id)
+            .maybeSingle()
+
+          if (user?.email) {
+            setToEmail(user.email)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching email:', error)
+      }
+    }
+
+    loadEmail()
+  }, [userId])
 
   // Clear send status after 3 seconds
   useEffect(() => {
@@ -105,9 +147,8 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     }
   }, [sendStatus])
 
-  // Update state when email mode or customer data changes
+  // Update state when email mode changes (but don't override fetched email)
   useEffect(() => {
-    setToEmail(customerEmail)
     setSubject(
       emailMode === 'credit' 
         ? "We've Added a Free Credit to Your Account" 
@@ -118,7 +159,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
         ? `<p>Hey there!</p><p><br></p><p>We're sorry we couldn't fix your sticker this time. We've added a free credit to your account.</p><p><br></p><p>If you have any questions or suggestions to make our product better, we're happy to help!</p><p><br></p><p>Best regards,<br>Alan & MakeMeASticker.com</p>`
         : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can click here to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
     )
-  }, [customerEmail, customerName, emailMode])
+  }, [emailMode])
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -148,8 +189,56 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     }
   }, [showNoImagesPopover])
 
+  // Image upload helper function
+  const uploadImageAsBlob = useCallback(async (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const result = e.target?.result as string
+        resolve(result)
+      }
+      reader.readAsDataURL(file)
+    })
+  }, [])
+
+  // Drag and drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set drag over to false if we're leaving the drop zone entirely
+    if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    const imageFiles = files.filter(file => file.type.startsWith('image/'))
+
+    for (const file of imageFiles) {
+      try {
+        const blobUrl = await uploadImageAsBlob(file)
+        if (onAttachImage) {
+          onAttachImage(blobUrl)
+        }
+      } catch (error) {
+        console.error('Error uploading image:', error)
+      }
+    }
+  }, [uploadImageAsBlob, onAttachImage])
+
   return (
-    <div className="bg-white rounded-lg shadow-xl border border-gray-300 w-[600px]">
+    <div className="bg-white rounded-lg shadow-xl border border-gray-300 w-[500px]">
       <Handle type="target" position={Position.Left} />
       
       {/* Header */}
@@ -169,28 +258,76 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
         }`}>
           {isCreditMode ? 'Credit Notification' : emailMode === 'artwork' ? 'Fixed Artwork' : 'New Message'}
         </div>
+        
+        {/* Front Conversation Threading */}
+        <div className="flex flex-col items-end gap-1 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500">Conversation ID:</span>
+            <input 
+              type="text"
+              value={conversationId}
+              onChange={(e) => setConversationId(e.target.value)}
+              className="w-24 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:border-blue-400 bg-white"
+              placeholder="Optional"
+            />
+          </div>
+          {/* <div className="flex items-center gap-2">
+            <span className="text-gray-500">Message ID:</span>
+            <input 
+              type="text"
+              value={messageId}
+              onChange={(e) => setMessageId(e.target.value)}
+              className="w-24 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:border-blue-400 bg-white"
+              placeholder="Optional"
+            />
+          </div> */}
+        </div>
       </div>
 
       {/* Email Fields */}
-      <div className="px-6 py-4 space-y-4">
-        <div className="flex items-center">
-          <div className="text-base text-gray-700 w-16 flex-shrink-0">To</div>
-          <input 
-            type="email"
-            value={toEmail}
-            onChange={(e) => setToEmail(e.target.value)}
-            className={`flex-1 text-base text-gray-900 px-4 py-3 border-b focus:outline-none bg-transparent ${
-              isCreditMode 
-                ? 'border-orange-200 focus:border-orange-500' 
-                : emailMode === 'artwork'
-                  ? 'border-blue-200 focus:border-blue-500'
-                  : 'border-gray-200 focus:border-blue-500'
-            }`}
-          />
-          <div className="relative ml-4">
+      <div className="px-4 pt-2 pb-3">
+        <div className="flex items-center gap-6">
+          {/* To Field - Takes up more space since emails are longer */}
+          <div className="flex items-center flex-[2]">
+            <div className="text-xs text-gray-600 w-6 flex-shrink-0 font-medium">To</div>
+            <input 
+              type="email"
+              value={toEmail}
+              onChange={(e) => setToEmail(e.target.value)}
+              className={`flex-1 text-sm text-gray-900 px-2 py-2 border-b focus:outline-none bg-transparent transition-colors ${
+                isCreditMode 
+                  ? 'border-orange-200 focus:border-orange-400' 
+                  : emailMode === 'artwork'
+                    ? 'border-blue-200 focus:border-blue-400'
+                    : 'border-gray-200 focus:border-blue-400'
+              }`}
+              placeholder="recipient@email.com"
+            />
+          </div>
+          
+          {/* Subject Field - Takes up less space */}
+          <div className="flex items-center flex-[3]">
+            <div className="text-xs text-gray-600 w-10 flex-shrink-0 font-medium">Subject</div>
+            <input 
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className={`flex-1 text-sm text-gray-900 px-2 py-2 border-b focus:outline-none bg-transparent transition-colors ${
+                isCreditMode 
+                  ? 'border-orange-200 focus:border-orange-400' 
+                  : emailMode === 'artwork'
+                    ? 'border-blue-200 focus:border-blue-400'
+                    : 'border-gray-200 focus:border-blue-400'
+              }`}
+              placeholder="Email subject..."
+            />
+          </div>
+          
+          {/* UID Button - Commented Out */}
+          {/* <div className="relative">
             <button
               onClick={() => setShowUidPopover(!showUidPopover)}
-              className="px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 transition-colors"
+              className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 transition-colors"
             >
               UID
             </button>
@@ -216,29 +353,13 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-
-        <div className="flex items-center">
-          <div className="text-base text-gray-700 w-16 flex-shrink-0">Subject</div>
-          <input 
-            type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className={`flex-1 text-base text-gray-900 px-4 py-3 border-b focus:outline-none bg-transparent ${
-              isCreditMode 
-                ? 'border-orange-200 focus:border-orange-500' 
-                : emailMode === 'artwork'
-                  ? 'border-blue-200 focus:border-blue-500'
-                  : 'border-gray-200 focus:border-blue-500'
-            }`}
-          />
+          </div> */}
         </div>
       </div>
 
       {/* Message Body */}
-      <div className="px-6 pb-6">
-        <div className="quill-email-editor nodrag">
+      <div className="px-4 pb-4">
+        <div className="quill-email-editor nodrag [&_.ql-editor]:text-sm [&_.ql-container]:!h-auto [&_.ql-editor]:!min-h-[250px]">
           <ReactQuill
             value={body}
             onChange={setBody}
@@ -246,7 +367,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
             formats={quillFormats}
             placeholder="Click here to edit your email message..."
             style={{ 
-              height: '320px',
+              minHeight: '250px',
               fontFamily: 'system-ui, -apple-system, sans-serif'
             }}
             theme="snow"
@@ -256,7 +377,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
 
       {/* Attachments */}
       {!isCreditMode && selectedImages.length > 0 && (
-        <div className="px-6 pb-4">
+        <div className="px-4 pb-4">
           <div className="text-sm text-gray-700 mb-3">Attachments ({selectedImages.length})</div>
           <div className="flex flex-wrap gap-3">
             {selectedImages.map((imageUrl, index) => (
@@ -290,83 +411,91 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
       )}
 
       {/* Bottom Toolbar */}
-      <div className={`flex items-center justify-start px-4 py-3 border-t ${
+      <div className={`flex items-center justify-between px-4 py-3 border-t ${
         isCreditMode 
           ? 'border-orange-200 bg-orange-50' 
           : emailMode === 'artwork'
             ? 'border-blue-200 bg-blue-50'
             : 'border-gray-200'
       }`}>
-        {/* Split Send Button */}
-        <div className="relative" ref={dropdownRef}>
-          <div className={`flex rounded overflow-hidden ${
-            isSending
-              ? 'bg-gray-400'
-              : isCreditMode
-                ? 'bg-orange-600 hover:bg-orange-700'
-                : emailMode === 'artwork'
-                  ? 'bg-blue-600 hover:bg-blue-700'
-                  : 'bg-blue-600 hover:bg-blue-700'
-          }`}>
-            {/* Main Send Button */}
-            <button
-              onClick={async () => {
-                // Check if no images are attached and not in credit mode
-                if (!isCreditMode && selectedImages.length === 0) {
-                  setShowNoImagesPopover(true)
-                } else {
-                  try {
-                    await onSend({ toEmail, subject, body: getEmailHTML(body) })
-                    setSendStatus('sent')
-                  } catch (error) {
-                    console.error('Send & Resolve failed:', error)
-                    setSendStatus('failed')
+        {/* Left side - Send button and status */}
+        <div className="flex items-center">
+          {/* Split Send Button */}
+          <div className="relative" ref={dropdownRef}>
+            <div className={`flex rounded overflow-hidden ${
+              isSending
+                ? 'bg-gray-400'
+                : isCreditMode
+                  ? 'bg-orange-600 hover:bg-orange-700'
+                  : emailMode === 'artwork'
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+            }`}>
+              {/* Main Send Button */}
+              <button
+                onClick={async () => {
+                  // Check if no images are attached and not in credit mode
+                  if (!isCreditMode && selectedImages.length === 0) {
+                    setShowNoImagesPopover(true)
+                  } else {
+                    try {
+                      await onSend({ 
+                        toEmail, 
+                        subject, 
+                        body: getEmailHTML(body),
+                        conversationId: conversationId.trim() || undefined,
+                        messageId: messageId.trim() || undefined
+                      })
+                      setSendStatus('sent')
+                    } catch (error) {
+                      console.error('Send & Resolve failed:', error)
+                      setSendStatus('failed')
+                    }
                   }
-                }
-              }}
-              disabled={isSending}
-              className="px-6 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed"
-            >
-              {isSending ? 'Sending...' : 'Send & Resolve'}
-            </button>
-            
-            {/* Dropdown Arrow Button */}
-            <div className="w-px bg-white/20"></div>
-            <button
-              onClick={() => setShowSendDropdown(!showSendDropdown)}
-              disabled={isSending}
-              className="px-2 py-2 text-white hover:bg-black/10 transition-colors disabled:cursor-not-allowed"
-            >
-              <ChevronDown size={14} />
-            </button>
-        </div>
-        
-        {/* Send Status Display */}
-        {sendStatus && (
-          <div className={`ml-3 flex items-center gap-1 px-2 py-1 rounded text-sm font-medium ${
-            sendStatus === 'sent' 
-              ? 'bg-green-100 text-green-700' 
-              : 'bg-red-100 text-red-700'
-          }`}>
-            {sendStatus === 'sent' ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/>
-                </svg>
-                Sent
-              </>
-            ) : (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-                Failed
-              </>
-            )}
+                }}
+                disabled={isSending}
+                className="px-6 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed"
+              >
+                {isSending ? 'Sending...' : 'Send & Resolve'}
+              </button>
+              
+              {/* Dropdown Arrow Button */}
+              <div className="w-px bg-white/20"></div>
+              <button
+                onClick={() => setShowSendDropdown(!showSendDropdown)}
+                disabled={isSending}
+                className="px-2 py-2 text-white hover:bg-black/10 transition-colors disabled:cursor-not-allowed"
+              >
+                <ChevronDown size={14} />
+              </button>
           </div>
-        )}
-        
-        {/* Dropdown Menu */}
+          
+          {/* Send Status Display */}
+          {sendStatus && (
+            <div className={`ml-3 flex items-center gap-1 px-2 py-1 rounded text-sm font-medium ${
+              sendStatus === 'sent' 
+                ? 'bg-green-100 text-green-700' 
+                : 'bg-red-100 text-red-700'
+            }`}>
+              {sendStatus === 'sent' ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                  Sent
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  Failed
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Dropdown Menu */}
           {showSendDropdown && !isSending && (
             <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px] z-20">
               <button
@@ -397,7 +526,9 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                         sendToCustomer: true,
                         emailMode: 'credit',
                         customSubject: subject,
-                        customBody: getEmailHTML(body)  // Process the HTML before sending
+                        customBody: getEmailHTML(body),  // Process the HTML before sending
+                        conversationId: conversationId.trim() || undefined,
+                        messageId: messageId.trim() || undefined
                       })
                     }).then(response => response.json())
                       .then(result => {
@@ -430,7 +561,9 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                         isDraft: true,
                         sendToCustomer: true,
                         customSubject: subject,
-                        customBody: getEmailHTML(body)  // Process the HTML before sending
+                        customBody: getEmailHTML(body),  // Process the HTML before sending
+                        conversationId: conversationId.trim() || undefined,
+                        messageId: messageId.trim() || undefined
                       })
                     }).then(response => response.json())
                       .then(result => {
@@ -473,7 +606,13 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                   onClick={async () => {
                     setShowNoImagesPopover(false)
                     try {
-                      await onSend({ toEmail, subject, body: getEmailHTML(body) })
+                      await onSend({ 
+                        toEmail, 
+                        subject, 
+                        body: getEmailHTML(body),
+                        conversationId: conversationId.trim() || undefined,
+                        messageId: messageId.trim() || undefined
+                      })
                       setSendStatus('sent')
                     } catch (error) {
                       console.error('Send Anyway failed:', error)
@@ -493,7 +632,28 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
               </div>
             </div>
           )}
+          </div>
         </div>
+
+        {/* Right side - Image Drop Zone - Only show for artwork mode */}
+        {!isCreditMode && (
+          <div
+            ref={dropZoneRef}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`flex items-center justify-center px-3 py-2 border-2 border-dashed rounded-lg transition-all cursor-pointer hover:bg-gray-50 ${
+              isDragOver
+                ? 'border-blue-400 bg-blue-50'
+                : 'border-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <Upload size={14} />
+              <span>Drop images</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

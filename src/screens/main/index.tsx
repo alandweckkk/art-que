@@ -21,6 +21,7 @@ interface StickerEdit {
   preprocessed_output_image_url: string
   initial_edit_image_url: string // First image from image_history array
   image_history: string[] // Full array of edit images
+  internal_note: string | null
   amount_spent: number
   purchased_at: string
   edit_created_at: string
@@ -240,12 +241,10 @@ export default function Main() {
   const fetchStickerEdits = useCallback(async (page: number = 1) => {
     setLoading(true)
     try {
-      // First get total count
+      // First get total count from y_sticker_edits
       const { count, error: countError } = await supabase
-        .from('model_run')
+        .from('y_sticker_edits')
         .select('*', { count: 'exact', head: true })
-        .eq('reaction', 'negative')
-        .not('feedback_addressed', 'is', true)
         .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
 
       if (countError) {
@@ -255,30 +254,29 @@ export default function Main() {
 
       setTotalRecords(count || 0)
 
-      // Query ALL records (no pagination limit) - we'll sort and paginate after
+      // Query from y_sticker_edits table and join to model_run
       const { data: stickerEdits, error } = await supabase
-        .from('model_run')
+        .from('y_sticker_edits')
         .select(`
           id,
-          user_id,
-          feedback_notes,
-          input_image_url,
-          output_image_url,
-          preprocessed_output_image_url,
+          status,
+          urgency,
           created_at,
-          feedback_addressed,
-          reaction,
-          y_sticker_edits!y_sticker_edits_model_run_id_fkey (
+          updated_at,
+          image_history,
+          internal_note,
+          model_run!y_sticker_edits_model_run_id_fkey (
             id,
-            status,
-            urgency,
+            user_id,
+            feedback_notes,
+            input_image_url,
+            output_image_url,
+            preprocessed_output_image_url,
             created_at,
-            updated_at,
-            image_history
+            feedback_addressed,
+            reaction
           )
         `)
-        .eq('reaction', 'negative')
-        .not('feedback_addressed', 'is', true)
         .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
         .order('created_at', { ascending: false })
 
@@ -289,9 +287,16 @@ export default function Main() {
       }
 
       if (stickerEdits) {
+        // Filter out records where model_run data is missing or doesn't meet criteria
+        const validEdits = stickerEdits.filter(edit => 
+          edit.model_run && 
+          edit.model_run.reaction === 'negative' && 
+          !edit.model_run.feedback_addressed
+        )
+        
         // Get unique user IDs to fetch Stripe spending data
-        const userIds = [...new Set(stickerEdits
-          .map(modelRun => modelRun.user_id)
+        const userIds = [...new Set(validEdits
+          .map(edit => edit.model_run.user_id)
           .filter(Boolean)
         )]
 
@@ -330,40 +335,37 @@ export default function Main() {
         // Sort the data using the selected sort mode
         let sortedEdits
         if (sortMode === 'newest') {
-          sortedEdits = [...stickerEdits].sort((a, b) => {
+          sortedEdits = [...validEdits].sort((a, b) => {
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           })
         } else {
           // Priority sorting (existing 4-bucket system)
-          sortedEdits = [...stickerEdits].sort((a, b) => {
-            const aStickerEdit = Array.isArray(a.y_sticker_edits) ? a.y_sticker_edits[0] : a.y_sticker_edits
-            const bStickerEdit = Array.isArray(b.y_sticker_edits) ? b.y_sticker_edits[0] : b.y_sticker_edits
-            
+          sortedEdits = [...validEdits].sort((a, b) => {
             // Get user spending totals
-            const aSpending = userSpending[a.user_id.toString()] || 0
-            const bSpending = userSpending[b.user_id.toString()] || 0
+            const aSpending = userSpending[a.model_run.user_id.toString()] || 0
+            const bSpending = userSpending[b.model_run.user_id.toString()] || 0
             
             // Check for mail order customers
             const aHasMailOrder = stripeData?.some(event => 
-              event.user_id === a.user_id.toString() && event.pack_type === 'mail_order'
+              event.user_id === a.model_run.user_id.toString() && event.pack_type === 'mail_order'
             ) || false
             const bHasMailOrder = stripeData?.some(event => 
-              event.user_id === b.user_id.toString() && event.pack_type === 'mail_order'
+              event.user_id === b.model_run.user_id.toString() && event.pack_type === 'mail_order'
             ) || false
             
             // Bucket 1: Urgency records (urgency IS NOT NULL)
-            const aHasUrgency = aStickerEdit?.urgency !== null && aStickerEdit?.urgency !== undefined
-            const bHasUrgency = bStickerEdit?.urgency !== null && bStickerEdit?.urgency !== undefined
+            const aHasUrgency = a.urgency !== null && a.urgency !== undefined
+            const bHasUrgency = b.urgency !== null && b.urgency !== undefined
             
             if (aHasUrgency && !bHasUrgency) return -1
             if (!aHasUrgency && bHasUrgency) return 1
             if (aHasUrgency && bHasUrgency) {
               // Within urgency bucket: higher urgency first, then older created_at
-              if (aStickerEdit.urgency !== bStickerEdit.urgency) {
+              if (a.urgency !== b.urgency) {
                 // Map urgency text to numbers for comparison
                 const urgencyMap = { 'do it now': 3, 'very high': 2, 'high': 1 }
-                const aUrgencyNum = urgencyMap[aStickerEdit.urgency as keyof typeof urgencyMap] || 0
-                const bUrgencyNum = urgencyMap[bStickerEdit.urgency as keyof typeof urgencyMap] || 0
+                const aUrgencyNum = urgencyMap[a.urgency as keyof typeof urgencyMap] || 0
+                const bUrgencyNum = urgencyMap[b.urgency as keyof typeof urgencyMap] || 0
                 return bUrgencyNum - aUrgencyNum // Higher urgency first
               }
               return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -395,17 +397,17 @@ export default function Main() {
         }
 
         // Transform the sorted data to match our interface with real Stripe spending data
-        const transformedData = sortedEdits.map(modelRun => {
+        const transformedData = sortedEdits.map(stickerEdit => {
+          const modelRun = stickerEdit.model_run
           const now = new Date()
-          const createdAt = new Date(modelRun.created_at)
-          const stickerEdit = Array.isArray(modelRun.y_sticker_edits) ? modelRun.y_sticker_edits[0] : modelRun.y_sticker_edits
-          const updatedAt = stickerEdit?.updated_at ? new Date(stickerEdit.updated_at) : createdAt
+          const createdAt = new Date(stickerEdit.created_at)
+          const updatedAt = stickerEdit.updated_at ? new Date(stickerEdit.updated_at) : createdAt
           const userEmail = userEmailMap[modelRun.user_id] || null
+          console.log('Data transformation - user_id:', modelRun.user_id, 'userEmail:', userEmail, 'userEmailMap keys:', Object.keys(userEmailMap))
           
           const diffMs = now.getTime() - createdAt.getTime()
           const updateDiffMs = updatedAt.getTime() - createdAt.getTime()
-          const purchaseToEditMs = stickerEdit?.created_at ? 
-            new Date(stickerEdit.created_at).getTime() - createdAt.getTime() : 0
+          const purchaseToEditMs = createdAt.getTime() - new Date(modelRun.created_at).getTime()
           
           // Calculate bucket for this record
           const userSpendingAmount = userSpending[modelRun.user_id.toString()] || 0
@@ -414,7 +416,7 @@ export default function Main() {
           ) || false
           
           let bucket: 'Urgent' | 'Big Spender' | 'Print Order' | 'Remainder'
-          if (stickerEdit?.urgency !== null && stickerEdit?.urgency !== undefined) {
+          if (stickerEdit.urgency !== null && stickerEdit.urgency !== undefined) {
             bucket = 'Urgent'
           } else if (hasMailOrder) {
             bucket = 'Print Order'
@@ -425,23 +427,25 @@ export default function Main() {
           }
           
           return {
-            sticker_edit_id: stickerEdit?.id?.toString() || modelRun.id,
+            sticker_edit_id: stickerEdit.id.toString(),
             model_run_id: modelRun.id,
-            status: stickerEdit?.status || 'unresolved',
-            urgency: stickerEdit?.urgency || null,
+            status: stickerEdit.status || 'unresolved',
+            urgency: stickerEdit.urgency || null,
             bucket: bucket,
             customer_email: userEmail || 'No email',
             customer_name: `User ${modelRun.user_id}` || 'Unknown',
+            user_email: userEmail || undefined, // Preloaded user email
             feedback_notes: modelRun.feedback_notes || 'No feedback provided',
             input_image_url: modelRun.input_image_url || '',
             output_image_url: modelRun.output_image_url || '',
             preprocessed_output_image_url: modelRun.preprocessed_output_image_url || '',
-            initial_edit_image_url: stickerEdit?.image_history && stickerEdit.image_history.length > 0 ? stickerEdit.image_history[0] : '',
-            image_history: stickerEdit?.image_history || [],
+            initial_edit_image_url: stickerEdit.image_history && stickerEdit.image_history.length > 0 ? stickerEdit.image_history[0] : '',
+            image_history: stickerEdit.image_history || [],
+            internal_note: stickerEdit.internal_note || null,
             amount_spent: userSpending[modelRun.user_id.toString()] || 0, // Real Stripe spending data
             purchased_at: modelRun.created_at,
-            edit_created_at: stickerEdit?.created_at || modelRun.created_at,
-            edit_updated_at: stickerEdit?.updated_at || modelRun.created_at,
+            edit_created_at: stickerEdit.created_at,
+            edit_updated_at: stickerEdit.updated_at,
             
             // Enhanced timing calculations
             days_since_created: Math.floor(diffMs / (1000 * 60 * 60 * 24)),
@@ -449,8 +453,8 @@ export default function Main() {
             minutes_since_created: Math.floor(diffMs / (1000 * 60)),
             time_spent_on_edit: Math.max(1, Math.floor(updateDiffMs / (1000 * 60))), // Minutes between creation and last update
             purchase_to_edit_delay: Math.floor(Math.abs(purchaseToEditMs) / (1000 * 60 * 60)), // Hours from purchase to edit request
-            last_activity_relative: getRelativeTime(modelRun.created_at),
-            created_at_formatted: new Date(modelRun.created_at).toLocaleDateString('en-US', { 
+            last_activity_relative: getRelativeTime(stickerEdit.created_at),
+            created_at_formatted: new Date(stickerEdit.created_at).toLocaleDateString('en-US', { 
               month: 'short', 
               day: 'numeric', 
               hour: 'numeric', 
@@ -458,8 +462,8 @@ export default function Main() {
               hour12: true 
             }),
             
-            image_count: stickerEdit?.image_history ? stickerEdit.image_history.length : 1,
-            urgency_priority: stickerEdit?.urgency ? Number(stickerEdit.urgency) : 5
+            image_count: stickerEdit.image_history ? stickerEdit.image_history.length : 1,
+            urgency_priority: stickerEdit.urgency ? Number(stickerEdit.urgency) : 5
           }
         })
 
@@ -525,7 +529,8 @@ export default function Main() {
             urgency,
             created_at,
             updated_at,
-            image_history
+            image_history,
+            internal_note
           )
         `)
         .eq('reaction', 'negative')
@@ -1144,37 +1149,84 @@ export default function Main() {
     
     try {
       setIsGeminiGenerating(true);
-      await globalClientJobQueue.enqueue(`Gemini on ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
-        const formData = new FormData();
-        formData.append('prompt', geminiPrompt.trim());
-        const urls = (toolSelectedImages.length ? toolSelectedImages : (geminiInputImages.length ? geminiInputImages : [currentCard.preprocessed_output_image_url])).filter(Boolean)
-        formData.append('image_urls', urls.join(','));
-        formData.append('num_images', '1');
-        formData.append('output_format', 'png');
-        const response = await fetch('/api/gemini-25-edit', { method: 'POST', body: formData });
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorMessage = `HTTP ${response.status}: Failed to process with Gemini 2.5`;
-          try {
-            const errorData = JSON.parse(errorText);
-            if (errorData.error) errorMessage = errorData.error;
-          } catch {
-            if (errorText) errorMessage = errorText;
-          }
-          throw new Error(errorMessage);
+      
+      await globalClientJobQueue.enqueue(`Gemini → PostProcess on ${currentCard.model_run_id}`, `Card ${currentCardIndex + 1}`, async () => {
+        // Step 1: Call Gemini tool
+        const geminiFormData = new FormData();
+        geminiFormData.append('tool', 'gemini');
+        geminiFormData.append('prompt', geminiPrompt);
+        geminiFormData.append('debug', 'true');
+        
+        // Collect image URLs - use preprocessed output and input image if available
+        const imageUrls = [];
+        if (currentCard.preprocessed_output_image_url) {
+          imageUrls.push(currentCard.preprocessed_output_image_url);
         }
-        const result = await response.json();
-        if (!result.success || !result.data?.images || result.data.images.length === 0) {
-          throw new Error(result.error || 'No processed images in response');
+        if (currentCard.input_image_url) {
+          imageUrls.push(currentCard.input_image_url);
         }
-        const processedImageUrl = result.data.images[0].url;
-        handleProcessedImage(processedImageUrl);
-        return { imageUrl: processedImageUrl } as const
+        
+        if (imageUrls.length === 0) {
+          throw new Error('No images available for processing');
+        }
+        
+        geminiFormData.append('imageUrls', imageUrls.join(','));
+
+        console.log('MainScreen: Step 1 - Calling Gemini API...');
+        const geminiResponse = await fetch('https://tools.makemeasticker.com/api/universal', {
+          method: 'POST',
+          body: geminiFormData
+        });
+
+        const geminiResult = await geminiResponse.json();
+        console.log('MainScreen: Gemini API response:', geminiResult);
+
+        if (!geminiResponse.ok || geminiResult.error) {
+          throw new Error(geminiResult.error || `HTTP ${geminiResponse.status}: Failed to process with Gemini`);
+        }
+
+        if (!geminiResult.image && !geminiResult.processedImageUrl) {
+          throw new Error('No image returned from Gemini');
+        }
+
+        const geminiImageUrl = geminiResult.image || geminiResult.processedImageUrl;
+        console.log('MainScreen: Step 1 complete - Gemini generation successful:', geminiImageUrl);
+
+        // Step 2: Call postProcess tool with Gemini result
+        console.log('MainScreen: Step 2 - Calling postProcess API...');
+        const postProcessFormData = new FormData();
+        postProcessFormData.append('tool', 'postProcess');
+        postProcessFormData.append('imageUrl', geminiImageUrl);
+        postProcessFormData.append('debug', 'true');
+
+        const postProcessResponse = await fetch('https://tools.makemeasticker.com/api/universal', {
+          method: 'POST',
+          body: postProcessFormData
+        });
+
+        const postProcessResult = await postProcessResponse.json();
+        console.log('MainScreen: PostProcess API response:', postProcessResult);
+
+        if (!postProcessResponse.ok || postProcessResult.error) {
+          throw new Error(postProcessResult.error || `HTTP ${postProcessResponse.status}: Failed to post-process image`);
+        }
+
+        if (!postProcessResult.image && !postProcessResult.processedImageUrl) {
+          throw new Error('No processed image returned from postProcess API');
+        }
+
+        const finalImageUrl = postProcessResult.image || postProcessResult.processedImageUrl;
+        console.log('MainScreen: Step 2 complete - PostProcess successful:', finalImageUrl);
+        console.log('MainScreen: Gemini → postProcess chain completed successfully!');
+
+        handleProcessedImage(finalImageUrl);
+        return { imageUrl: finalImageUrl } as const;
       }, {
         model_run_id: currentCard.model_run_id,
-        original_image_url: currentCard.preprocessed_output_image_url || currentCard.output_image_url,
+        original_image_url: currentCard.preprocessed_output_image_url,
         feedback_notes: currentCard.feedback_notes
-      })
+      });
+      
     } catch (e) {
       console.error('Gemini generate error:', e);
       const msg = e instanceof Error ? e.message : 'Failed to process with Gemini 2.5';

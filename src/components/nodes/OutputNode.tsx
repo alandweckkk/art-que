@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { Handle, Position } from '@xyflow/react'
+import { Flower2 } from 'lucide-react'
 
 interface OutputNodeData {
   title: string
@@ -15,6 +16,7 @@ interface OutputNodeData {
   }
   onGenerate: () => void
   onAttachToEmail?: (imageUrl: string) => void
+  onClear?: () => void
   useGlobalPrompt?: boolean
   individualPrompt?: string
   onPromptChange?: (value: string) => void
@@ -25,7 +27,7 @@ interface OutputNodeProps {
 }
 
 export default function OutputNode({ data }: OutputNodeProps) {
-  const { title, tool, output, onGenerate, onAttachToEmail, useGlobalPrompt, individualPrompt, onPromptChange } = data
+  const { title, tool, output, onGenerate, onAttachToEmail, onClear, useGlobalPrompt, individualPrompt, onPromptChange } = data
   const [brightness, setBrightness] = useState(111)
   const [saturation, setSaturation] = useState(70)
   const [showBrightnessControl, setShowBrightnessControl] = useState(false)
@@ -214,7 +216,7 @@ export default function OutputNode({ data }: OutputNodeProps) {
       {/* Image Container */}
       <div className="w-full p-1 mb-0">
         <div 
-          className={`w-full rounded flex items-center justify-center overflow-hidden ${
+          className={`w-full rounded flex items-center justify-center overflow-hidden relative group ${
             output?.imageUrl ? 'aspect-square' : 'h-[50px]'
           }`}
           style={{
@@ -223,15 +225,27 @@ export default function OutputNode({ data }: OutputNodeProps) {
           }}
         >
           {output?.imageUrl ? (
-            <img 
-              src={output.imageUrl} 
-              alt={`${tool} output`}
-              className="max-w-full max-h-full object-contain"
-              draggable={false}
-              style={{
-                filter: tool === 'openai' ? `saturate(${saturation}%) brightness(${brightness}%)` : undefined
-              }}
-            />
+            <>
+              <img 
+                src={output.imageUrl} 
+                alt={`${tool} output`}
+                className="max-w-full max-h-full object-contain"
+                draggable={false}
+                style={{
+                  filter: tool === 'openai' ? `saturate(${saturation}%) brightness(${brightness}%)` : undefined
+                }}
+              />
+              
+              {/* Bloom Button - always visible in top right corner */}
+              <button
+                onClick={onClear}
+                className="absolute top-2 right-2 bg-white/90 hover:bg-white text-pink-500 hover:text-pink-600 rounded-full w-6 h-6 flex items-center justify-center transition-colors shadow-sm border border-gray-200"
+                title="Clear image and reset"
+                disabled={!onClear}
+              >
+                <Flower2 size={12} />
+              </button>
+            </>
           ) : output?.status === 'processing' ? (
             <div className="text-gray-600 text-sm bg-white/80 px-2 py-1 rounded">Generating...</div>
           ) : (

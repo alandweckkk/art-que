@@ -20,6 +20,12 @@ interface FrontEmailData {
   attachments?: PreparedAttachment[];
 }
 
+interface FrontReplyData {
+  body: string;
+  body_format: 'html' | 'text';
+  attachments?: PreparedAttachment[];
+}
+
 interface FrontApiResponse {
   success: boolean;
   message_id?: string;
@@ -300,6 +306,62 @@ export default class FrontAPIClient {
       };
     } catch (error) {
       console.error('💥 Error creating Front draft:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  async replyToConversation(conversationId: string, replyData: FrontReplyData): Promise<FrontApiResponse> {
+    try {
+      console.log('💬 Replying to Front conversation...');
+      console.log('📧 Reply data:', {
+        conversationId,
+        bodyLength: replyData.body.length,
+        attachments: replyData.attachments?.length || 0
+      });
+
+      let responseData: { id: string; uid: string };
+      if (replyData.attachments && replyData.attachments.length > 0) {
+        // Use multipart/form-data when attachments are present
+        const formData = new FormData();
+        formData.append('body', replyData.body);
+        formData.append('body_format', replyData.body_format);
+
+        for (const attachment of replyData.attachments) {
+          const uint8 = new Uint8Array(attachment.data);
+          const blob = new Blob([uint8], { type: attachment.contentType });
+          formData.append('attachments[]', blob, attachment.filename);
+        }
+
+        responseData = await this.makeRequest(
+          `/conversations/${conversationId}/messages`,
+          'POST',
+          formData
+        ) as { id: string; uid: string };
+      } else {
+        // JSON path without attachments
+        const payload = {
+          body: replyData.body,
+          body_format: replyData.body_format
+        };
+
+        responseData = await this.makeRequest(
+          `/conversations/${conversationId}/messages`,
+          'POST',
+          payload
+        ) as { id: string; uid: string };
+      }
+
+      return {
+        success: true,
+        message_id: responseData.id,
+        message_uid: responseData.uid,
+        details: responseData
+      };
+    } catch (error) {
+      console.error('💥 Error replying to Front conversation:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'

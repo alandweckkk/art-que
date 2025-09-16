@@ -6,12 +6,14 @@ export interface StickerEdit {
   bucket: 'Urgent' | 'Big Spender' | 'Print Order' | 'Remainder'
   customer_email: string
   customer_name: string
+  user_email?: string // Preloaded user email from users_populated
   feedback_notes: string
   input_image_url: string
   output_image_url: string
   preprocessed_output_image_url: string
   initial_edit_image_url: string
   image_history: string[]
+  internal_note: string | null
   amount_spent: number
   purchased_at: string
   edit_created_at: string

@@ -18,13 +18,15 @@ export interface EmailData {
   customSubject?: string
   customBody?: string
   emailMode?: 'credit'
+  conversationId?: string
+  messageId?: string
 }
 
 export const sendFixedArtwork = async (
   sticker: StickerEdit, 
   selectedImages: string[],
   setIsSendingEmail: (value: boolean) => void,
-  customEmailData?: { toEmail?: string; subject?: string; body?: string }
+  customEmailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string }
 ) => {
   // Allow sending even without images (user may choose "Send Anyway")
   if (!sticker) return
@@ -46,7 +48,9 @@ export const sendFixedArtwork = async (
       supportTeamName: 'MakeMeASticker.com',
       supportEmail: 'support@makemeasticker.com',
       customSubject: customEmailData?.subject,
-      customBody: customEmailData?.body
+      customBody: customEmailData?.body,
+      conversationId: customEmailData?.conversationId,
+      messageId: customEmailData?.messageId
     }
 
     console.log('📧 Sending email with data:', {
@@ -118,7 +122,7 @@ export const sendCreditEmail = async (
   sticker: StickerEdit,
   selectedImages: string[],
   setIsSendingCreditEmail: (value: boolean) => void,
-  customEmailData?: { toEmail?: string; subject?: string; body?: string }
+  customEmailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string }
 ) => {
   if (!sticker) return
 
@@ -140,7 +144,9 @@ export const sendCreditEmail = async (
       supportEmail: 'support@makemeasticker.com',
       customSubject: customEmailData?.subject,
       customBody: customEmailData?.body,
-      emailMode: 'credit'
+      emailMode: 'credit',
+      conversationId: customEmailData?.conversationId,
+      messageId: customEmailData?.messageId
     }
 
     console.log('📧 Sending credit email with data:', {

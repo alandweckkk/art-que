@@ -20,6 +20,8 @@ interface SendEmailRequest {
   customSubject?: string;
   customBody?: string;
   userId?: string;
+  conversationId?: string;
+  messageId?: string;
 }
 
 interface SendEmailResponse {
@@ -138,10 +140,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
 
     // Override with custom subject and body if provided
     if (body.customSubject) {
-      emailTemplate.subject = body.customSubject;
+      emailTemplate = { ...emailTemplate, subject: body.customSubject };
     }
     if (body.customBody) {
-      emailTemplate.body = body.customBody;
+      emailTemplate = { ...emailTemplate, body: body.customBody };
     }
 
     console.log('📧 Generated email template:', {
@@ -214,10 +216,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       attachments: attachments.length > 0 ? attachments : undefined
     };
 
-    // Send email or create draft
-    const result = (body.isDraft || !body.sendToCustomer)
-      ? await frontClient.createDraft(emailData)
-      : await frontClient.sendMessage(emailData);
+    // Send email, create draft, or reply to conversation
+    let result;
+    if (body.conversationId && !body.isDraft && body.sendToCustomer) {
+      // Reply to existing conversation
+      const replyData = {
+        body: emailTemplate.body,
+        body_format: 'html' as const,
+        attachments: attachments.length > 0 ? attachments : undefined
+      };
+      result = await frontClient.replyToConversation(body.conversationId, replyData);
+    } else if (body.isDraft || !body.sendToCustomer) {
+      // Create draft
+      result = await frontClient.createDraft(emailData);
+    } else {
+      // Send new message
+      result = await frontClient.sendMessage(emailData);
+    }
 
     if (result.success) {
       let creditResult: { granted?: boolean; creditLedgerId?: string; error?: string } | undefined;

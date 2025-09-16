@@ -32,30 +32,29 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
       // Use the exact same query logic from the original working implementation
       console.log('🔍 Fetching table data with original working query...')
       
-      // Step 1: Get all model runs with the base filtering criteria
+      // Step 1: Get all y_sticker_edits with model_run data
       const { data: stickerEdits, error: stickerError } = await supabase
-        .from('model_run')
+        .from('y_sticker_edits')
         .select(`
           id,
-          user_id,
-          feedback_notes,
-          input_image_url,
-          output_image_url,
-          preprocessed_output_image_url,
+          status,
+          urgency,
+          image_history,
+          internal_note,
           created_at,
-          reaction,
-          feedback_addressed,
-          y_sticker_edits (
+          updated_at,
+          model_run!y_sticker_edits_model_run_id_fkey (
             id,
-            status,
-            urgency,
-            image_history,
+            user_id,
+            feedback_notes,
+            input_image_url,
+            output_image_url,
+            preprocessed_output_image_url,
             created_at,
-            updated_at
+            reaction,
+            feedback_addressed
           )
         `)
-        .eq('reaction', 'negative')
-        .is('feedback_addressed', null)
         .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
 
       if (stickerError) throw stickerError
@@ -63,8 +62,15 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
 
       console.log(`📊 Found ${stickerEdits.length} records`)
 
+      // Filter out records where model_run data is missing or doesn't meet criteria
+      const validEdits = stickerEdits.filter(edit => 
+        edit.model_run && 
+        edit.model_run.reaction === 'negative' && 
+        !edit.model_run.feedback_addressed
+      )
+
       // Step 2: Get user emails for all users
-      const userIds = [...new Set(stickerEdits.map(edit => edit.user_id.toString()))]
+      const userIds = [...new Set(validEdits.map(edit => edit.model_run.user_id.toString()))]
       
       const { data: userEmails, error: emailError } = await supabase
         .from('users_populated')
@@ -100,40 +106,37 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
       // Step 4: Apply sorting (same logic as original)
       let sortedEdits
       if (sortMode === 'newest') {
-        sortedEdits = [...stickerEdits].sort((a, b) => {
+        sortedEdits = [...validEdits].sort((a, b) => {
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         })
       } else {
         // Priority sorting (exact 4-bucket system from original)
-        sortedEdits = [...stickerEdits].sort((a, b) => {
-          const aStickerEdit = Array.isArray(a.y_sticker_edits) ? a.y_sticker_edits[0] : a.y_sticker_edits
-          const bStickerEdit = Array.isArray(b.y_sticker_edits) ? b.y_sticker_edits[0] : b.y_sticker_edits
-          
+        sortedEdits = [...validEdits].sort((a, b) => {
           // Get user spending totals
-          const aSpending = userSpending[a.user_id.toString()] || 0
-          const bSpending = userSpending[b.user_id.toString()] || 0
+          const aSpending = userSpending[a.model_run.user_id.toString()] || 0
+          const bSpending = userSpending[b.model_run.user_id.toString()] || 0
           
           // Check for mail order customers
           const aHasMailOrder = stripeData?.some(event => 
-            event.user_id === a.user_id.toString() && event.pack_type === 'mail_order'
+            event.user_id === a.model_run.user_id.toString() && event.pack_type === 'mail_order'
           ) || false
           const bHasMailOrder = stripeData?.some(event => 
-            event.user_id === b.user_id.toString() && event.pack_type === 'mail_order'
+            event.user_id === b.model_run.user_id.toString() && event.pack_type === 'mail_order'
           ) || false
           
           // Check for urgency
-          const aHasUrgency = aStickerEdit?.urgency !== null && aStickerEdit?.urgency !== undefined
-          const bHasUrgency = bStickerEdit?.urgency !== null && bStickerEdit?.urgency !== undefined
+          const aHasUrgency = a.urgency !== null && a.urgency !== undefined
+          const bHasUrgency = b.urgency !== null && b.urgency !== undefined
           
           // Bucket 1: Urgency items come first
           if (aHasUrgency && !bHasUrgency) return -1
           if (!aHasUrgency && bHasUrgency) return 1
           if (aHasUrgency && bHasUrgency) {
             // Within urgency bucket: higher urgency first, then older created_at
-            if (aStickerEdit.urgency !== bStickerEdit.urgency) {
+            if (a.urgency !== b.urgency) {
               const urgencyMap = { 'do it now': 3, 'very high': 2, 'high': 1 }
-              const aUrgencyNum = urgencyMap[aStickerEdit.urgency as keyof typeof urgencyMap] || 0
-              const bUrgencyNum = urgencyMap[bStickerEdit.urgency as keyof typeof urgencyMap] || 0
+              const aUrgencyNum = urgencyMap[a.urgency as keyof typeof urgencyMap] || 0
+              const bUrgencyNum = urgencyMap[b.urgency as keyof typeof urgencyMap] || 0
               return bUrgencyNum - aUrgencyNum // Higher urgency first
             }
             return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -168,8 +171,8 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
       const paginatedEdits = sortedEdits.slice(startIndex, endIndex)
 
       // Step 6: Transform to interface format (same as original)
-      const transformedData: StickerEdit[] = paginatedEdits.map((modelRun) => {
-        const stickerEdit = Array.isArray(modelRun.y_sticker_edits) ? modelRun.y_sticker_edits[0] : modelRun.y_sticker_edits
+      const transformedData: StickerEdit[] = paginatedEdits.map((stickerEdit) => {
+        const modelRun = stickerEdit.model_run
         const userEmail = userEmailMap[modelRun.user_id.toString()] || 'No email'
         const spending = userSpending[modelRun.user_id.toString()] || 0
         const hasMailOrder = stripeData?.some(event => 
@@ -178,7 +181,7 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
         
         // Determine bucket (exact same logic as original)
         let bucket: 'Urgent' | 'Big Spender' | 'Print Order' | 'Remainder'
-        if (stickerEdit?.urgency !== null && stickerEdit?.urgency !== undefined) {
+        if (stickerEdit.urgency !== null && stickerEdit.urgency !== undefined) {
           bucket = 'Urgent'
         } else if (hasMailOrder) {
           bucket = 'Print Order'
@@ -189,10 +192,10 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
         }
 
         return {
-          sticker_edit_id: stickerEdit?.id?.toString() || modelRun.id,
+          sticker_edit_id: stickerEdit.id.toString(),
           model_run_id: modelRun.id,
-          status: stickerEdit?.status || 'unresolved',
-          urgency: stickerEdit?.urgency || null,
+          status: stickerEdit.status || 'unresolved',
+          urgency: stickerEdit.urgency || null,
           bucket,
           customer_email: userEmail,
           customer_name: `User ${modelRun.user_id}`,
@@ -200,21 +203,22 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
           input_image_url: modelRun.input_image_url || '',
           output_image_url: modelRun.output_image_url || '',
           preprocessed_output_image_url: modelRun.preprocessed_output_image_url || '',
-          initial_edit_image_url: stickerEdit?.image_history?.[0] || '',
-          image_history: stickerEdit?.image_history || [],
+          initial_edit_image_url: stickerEdit.image_history?.[0] || '',
+          image_history: stickerEdit.image_history || [],
+          internal_note: stickerEdit.internal_note || null,
           amount_spent: spending,
           purchased_at: modelRun.created_at,
-          edit_created_at: stickerEdit?.created_at || modelRun.created_at,
-          edit_updated_at: stickerEdit?.updated_at || modelRun.created_at,
-          days_since_created: Math.floor((Date.now() - new Date(modelRun.created_at).getTime()) / (1000 * 60 * 60 * 24)),
-          hours_since_created: Math.floor((Date.now() - new Date(modelRun.created_at).getTime()) / (1000 * 60 * 60)),
-          minutes_since_created: Math.floor((Date.now() - new Date(modelRun.created_at).getTime()) / (1000 * 60)),
-          time_spent_on_edit: stickerEdit?.updated_at ? 
+          edit_created_at: stickerEdit.created_at,
+          edit_updated_at: stickerEdit.updated_at,
+          days_since_created: Math.floor((Date.now() - new Date(stickerEdit.created_at).getTime()) / (1000 * 60 * 60 * 24)),
+          hours_since_created: Math.floor((Date.now() - new Date(stickerEdit.created_at).getTime()) / (1000 * 60 * 60)),
+          minutes_since_created: Math.floor((Date.now() - new Date(stickerEdit.created_at).getTime()) / (1000 * 60)),
+          time_spent_on_edit: stickerEdit.updated_at ? 
             Math.floor((new Date(stickerEdit.updated_at).getTime() - new Date(stickerEdit.created_at).getTime()) / (1000 * 60)) : 0,
-          image_count: (stickerEdit?.image_history || []).length,
-          urgency_priority: stickerEdit?.urgency || 0,
-          last_activity_relative: formatTimeAgo(new Date(stickerEdit?.updated_at || modelRun.created_at)),
-          created_at_formatted: new Date(modelRun.created_at).toLocaleDateString(),
+          image_count: (stickerEdit.image_history || []).length,
+          urgency_priority: stickerEdit.urgency || 0,
+          last_activity_relative: formatTimeAgo(new Date(stickerEdit.updated_at)),
+          created_at_formatted: new Date(stickerEdit.created_at).toLocaleDateString(),
           purchase_to_edit_delay: 0 // Could calculate if needed
         }
       })

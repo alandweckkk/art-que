@@ -34,7 +34,7 @@ export default function FocusedEditingCanvas({ sticker, onNext, onPrevious, onCo
   const [geminiPrompt, setGeminiPrompt] = useState(sticker.feedback_notes)
   const [openaiPrompt, setOpenaiPrompt] = useState(sticker.feedback_notes)
   const [includeOriginalDesign, setIncludeOriginalDesign] = useState(true)
-  const [includeInputImage, setIncludeInputImage] = useState(true)
+  const [includeInputImage, setIncludeInputImage] = useState(false)
   const [outputs, setOutputs] = useState<EditOutput[]>([])
 
   // Update prompts when sticker changes
@@ -100,41 +100,99 @@ export default function FocusedEditingCanvas({ sticker, onNext, onPrevious, onCo
 
     try {
       if (tool === 'gemini') {
-        // Use our new universal Gemini API
-        const formData = new FormData()
-        formData.append('prompt', prompt)
+        // Gemini implementation with automatic postProcess chaining
+        console.log('FocusedCanvas: Starting Gemini → postProcess chain with prompt:', prompt)
         
-        // Collect image URLs - use output image and input image if available
-        const imageUrls = []
-        if (includeOriginalDesign && sticker.output_image_url) {
-          imageUrls.push(sticker.output_image_url)
-        }
-        if (includeInputImage && sticker.input_image_url) {
-          imageUrls.push(sticker.input_image_url)
-        }
-        
-        // Add each imageUrl separately
-        imageUrls.forEach(url => formData.append('imageUrls', url))
+        try {
+          // Step 1: Call Gemini tool
+          const geminiFormData = new FormData()
+          geminiFormData.append('tool', 'gemini')
+          geminiFormData.append('prompt', prompt)
+          geminiFormData.append('debug', 'true')
+          
+          // Collect image URLs - use output image and input image if available
+          const imageUrls = []
+          if (includeOriginalDesign && sticker.output_image_url) {
+            imageUrls.push(sticker.output_image_url)
+          }
+          if (includeInputImage && sticker.input_image_url) {
+            imageUrls.push(sticker.input_image_url)
+          }
+          
+          console.log('FocusedCanvas: Image URLs for Gemini:', imageUrls)
+          
+          if (imageUrls.length === 0) {
+            throw new Error('No images selected. Please select at least one image to process.')
+          }
+          
+          geminiFormData.append('imageUrls', imageUrls.join(','))
 
-        const response = await fetch('/api/universal-gemini-2.5', {
-          method: 'POST',
-          body: formData
-        })
+          console.log('FocusedCanvas: Step 1 - Calling Gemini API...')
+          const geminiResponse = await fetch('https://tools.makemeasticker.com/api/universal', {
+            method: 'POST',
+            body: geminiFormData
+          })
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: Failed to process with Gemini 2.5`)
+          const geminiResult = await geminiResponse.json()
+          console.log('FocusedCanvas: Gemini API response:', geminiResult)
+
+          if (!geminiResponse.ok || geminiResult.error) {
+            const errorMsg = geminiResult.error || `HTTP ${geminiResponse.status}: Failed to process with Gemini`
+            console.error('FocusedCanvas: Gemini API error:', errorMsg)
+            if (geminiResult.debugInfo) {
+              console.error('FocusedCanvas: Gemini debug info:', geminiResult.debugInfo)
+            }
+            throw new Error(errorMsg)
+          }
+
+          if (!geminiResult.image && !geminiResult.processedImageUrl) {
+            throw new Error('No image returned from Gemini API')
+          }
+
+          const geminiImageUrl = geminiResult.image || geminiResult.processedImageUrl
+          console.log('FocusedCanvas: Step 1 complete - Gemini generation successful:', geminiImageUrl)
+
+          // Step 2: Call postProcess tool with Gemini result
+          console.log('FocusedCanvas: Step 2 - Calling postProcess API...')
+          const postProcessFormData = new FormData()
+          postProcessFormData.append('tool', 'postProcess')
+          postProcessFormData.append('imageUrl', geminiImageUrl)
+          postProcessFormData.append('debug', 'true')
+
+          const postProcessResponse = await fetch('https://tools.makemeasticker.com/api/universal', {
+            method: 'POST',
+            body: postProcessFormData
+          })
+
+          const postProcessResult = await postProcessResponse.json()
+          console.log('FocusedCanvas: PostProcess API response:', postProcessResult)
+
+          if (!postProcessResponse.ok || postProcessResult.error) {
+            const errorMsg = postProcessResult.error || `HTTP ${postProcessResponse.status}: Failed to post-process image`
+            console.error('FocusedCanvas: PostProcess API error:', errorMsg)
+            if (postProcessResult.debugInfo) {
+              console.error('FocusedCanvas: PostProcess debug info:', postProcessResult.debugInfo)
+            }
+            throw new Error(errorMsg)
+          }
+
+          if (!postProcessResult.image && !postProcessResult.processedImageUrl) {
+            throw new Error('No processed image returned from postProcess API')
+          }
+
+          const finalImageUrl = postProcessResult.image || postProcessResult.processedImageUrl
+          console.log('FocusedCanvas: Step 2 complete - PostProcess successful:', finalImageUrl)
+          console.log('FocusedCanvas: Gemini → postProcess chain completed successfully!')
+
+          setOutputs(prev => prev.map(output => 
+            output.id === newOutput.id 
+              ? { ...output, status: 'completed' as const, imageUrl: finalImageUrl }
+              : output
+          ))
+        } catch (chainError) {
+          console.error('FocusedCanvas: Gemini → postProcess chain failed:', chainError)
+          throw chainError
         }
-
-        const result = await response.json()
-        if (!result.success || !result.data?.image) {
-          throw new Error(result.error || 'No image returned from Gemini 2.5')
-        }
-
-        setOutputs(prev => prev.map(output => 
-          output.id === newOutput.id 
-            ? { ...output, status: 'completed' as const, imageUrl: result.data.image }
-            : output
-        ))
       } else {
         // TODO: Implement other tools (flux, openai)
         setTimeout(() => {
@@ -615,19 +673,49 @@ function OutputNode({ title, tool, x, y, output, onGenerate }: OutputNodeProps) 
         </div>
 
         <div 
-          className="w-full aspect-square rounded flex items-center justify-center overflow-hidden mb-3"
+          className="w-full aspect-square rounded flex items-center justify-center overflow-hidden mb-3 relative group"
           style={{
             backgroundImage: `repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%)`,
             backgroundSize: '20px 20px'
           }}
         >
           {output?.imageUrl ? (
-            <img 
-              src={output.imageUrl} 
-              alt={`${tool} output`}
-              className="max-w-full max-h-full object-contain"
-              draggable={false}
-            />
+            <>
+              <img 
+                src={output.imageUrl} 
+                alt={`${tool} output`}
+                className="max-w-full max-h-full object-contain"
+                draggable={false}
+              />
+              
+              {/* Tooltip Icon - always visible in top right corner */}
+              <div className="absolute top-2 right-2 group/tooltip">
+                <div className="bg-black/60 hover:bg-black/80 text-white rounded-full w-6 h-6 flex items-center justify-center cursor-help transition-colors">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M9,9h0a3,3,0,0,1,6,0c0,2-3,3-3,3"/>
+                    <path d="M12,17h0"/>
+                  </svg>
+                </div>
+                
+                {/* Tooltip - appears on hover over icon */}
+                <div className="absolute top-8 right-0 opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                  <div className="bg-black/90 text-white text-xs px-3 py-2 rounded shadow-lg whitespace-nowrap max-w-[250px]">
+                    <div className="font-medium">{title} Output</div>
+                    {output?.prompt && (
+                      <div className="text-gray-300 mt-1">
+                        "{output.prompt.length > 50 ? output.prompt.substring(0, 50) + '...' : output.prompt}"
+                      </div>
+                    )}
+                    {output?.timestamp && (
+                      <div className="text-gray-400 text-[10px] mt-1">
+                        Generated: {new Date(output.timestamp).toLocaleTimeString()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
           ) : output?.status === 'processing' ? (
             <div className="text-gray-600 text-sm bg-white/80 px-2 py-1 rounded">Generating...</div>
           ) : (
@@ -732,19 +820,47 @@ function EditOutputNode({ output }: EditOutputNodeProps) {
         </div>
 
         <div 
-          className="w-full aspect-square rounded flex items-center justify-center overflow-hidden mb-2"
+          className="w-full aspect-square rounded flex items-center justify-center overflow-hidden mb-2 relative group"
           style={{
             backgroundImage: `repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%)`,
             backgroundSize: '20px 20px'
           }}
         >
           {output.imageUrl ? (
-            <img 
-              src={output.imageUrl} 
-              alt={`${output.tool} output`}
-              className="max-w-full max-h-full object-contain"
-              draggable={false}
-            />
+            <>
+              <img 
+                src={output.imageUrl} 
+                alt={`${output.tool} output`}
+                className="max-w-full max-h-full object-contain"
+                draggable={false}
+              />
+              
+              {/* Tooltip Icon - always visible in top right corner */}
+              <div className="absolute top-2 right-2 group/tooltip">
+                <div className="bg-black/60 hover:bg-black/80 text-white rounded-full w-6 h-6 flex items-center justify-center cursor-help transition-colors">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M9,9h0a3,3,0,0,1,6,0c0,2-3,3-3,3"/>
+                    <path d="M12,17h0"/>
+                  </svg>
+                </div>
+                
+                {/* Tooltip - appears on hover over icon */}
+                <div className="absolute top-8 right-0 opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                  <div className="bg-black/90 text-white text-xs px-3 py-2 rounded shadow-lg whitespace-nowrap max-w-[250px]">
+                    <div className="font-medium capitalize">{output.tool} Output</div>
+                    {output.prompt && (
+                      <div className="text-gray-300 mt-1">
+                        "{output.prompt.length > 50 ? output.prompt.substring(0, 50) + '...' : output.prompt}"
+                      </div>
+                    )}
+                    <div className="text-gray-400 text-[10px] mt-1">
+                      Generated: {output.timestamp.toLocaleTimeString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
           ) : output.status === 'processing' ? (
             <div className="text-gray-600 text-sm bg-white/80 px-2 py-1 rounded">Generating...</div>
           ) : null}
