@@ -288,15 +288,19 @@ export default function Main() {
 
       if (stickerEdits) {
         // Filter out records where model_run data is missing or doesn't meet criteria
-        const validEdits = stickerEdits.filter(edit => 
-          edit.model_run && 
-          edit.model_run.reaction === 'negative' && 
-          !edit.model_run.feedback_addressed
-        )
+        const validEdits = stickerEdits.filter(edit => {
+          const modelRun = Array.isArray(edit.model_run) ? edit.model_run[0] : edit.model_run
+          return modelRun && 
+                 modelRun.reaction === 'negative' && 
+                 !modelRun.feedback_addressed
+        })
         
         // Get unique user IDs to fetch Stripe spending data
         const userIds = [...new Set(validEdits
-          .map(edit => edit.model_run.user_id)
+          .map(edit => {
+            const modelRun = Array.isArray(edit.model_run) ? edit.model_run[0] : edit.model_run
+            return modelRun?.user_id
+          })
           .filter(Boolean)
         )]
 
@@ -341,16 +345,19 @@ export default function Main() {
         } else {
           // Priority sorting (existing 4-bucket system)
           sortedEdits = [...validEdits].sort((a, b) => {
+            const aModelRun = Array.isArray(a.model_run) ? a.model_run[0] : a.model_run
+            const bModelRun = Array.isArray(b.model_run) ? b.model_run[0] : b.model_run
+            
             // Get user spending totals
-            const aSpending = userSpending[a.model_run.user_id.toString()] || 0
-            const bSpending = userSpending[b.model_run.user_id.toString()] || 0
+            const aSpending = userSpending[aModelRun?.user_id?.toString() || ''] || 0
+            const bSpending = userSpending[bModelRun?.user_id?.toString() || ''] || 0
             
             // Check for mail order customers
             const aHasMailOrder = stripeData?.some(event => 
-              event.user_id === a.model_run.user_id.toString() && event.pack_type === 'mail_order'
+              event.user_id === aModelRun?.user_id?.toString() && event.pack_type === 'mail_order'
             ) || false
             const bHasMailOrder = stripeData?.some(event => 
-              event.user_id === b.model_run.user_id.toString() && event.pack_type === 'mail_order'
+              event.user_id === bModelRun?.user_id?.toString() && event.pack_type === 'mail_order'
             ) || false
             
             // Bucket 1: Urgency records (urgency IS NOT NULL)
@@ -398,21 +405,21 @@ export default function Main() {
 
         // Transform the sorted data to match our interface with real Stripe spending data
         const transformedData = sortedEdits.map(stickerEdit => {
-          const modelRun = stickerEdit.model_run
+          const modelRun = Array.isArray(stickerEdit.model_run) ? stickerEdit.model_run[0] : stickerEdit.model_run
           const now = new Date()
           const createdAt = new Date(stickerEdit.created_at)
           const updatedAt = stickerEdit.updated_at ? new Date(stickerEdit.updated_at) : createdAt
-          const userEmail = userEmailMap[modelRun.user_id] || null
-          console.log('Data transformation - user_id:', modelRun.user_id, 'userEmail:', userEmail, 'userEmailMap keys:', Object.keys(userEmailMap))
+          const userEmail = userEmailMap[modelRun?.user_id || ''] || null
+          console.log('Data transformation - user_id:', modelRun?.user_id, 'userEmail:', userEmail, 'userEmailMap keys:', Object.keys(userEmailMap))
           
           const diffMs = now.getTime() - createdAt.getTime()
           const updateDiffMs = updatedAt.getTime() - createdAt.getTime()
-          const purchaseToEditMs = createdAt.getTime() - new Date(modelRun.created_at).getTime()
+          const purchaseToEditMs = createdAt.getTime() - new Date(modelRun?.created_at || createdAt).getTime()
           
           // Calculate bucket for this record
-          const userSpendingAmount = userSpending[modelRun.user_id.toString()] || 0
+          const userSpendingAmount = userSpending[modelRun?.user_id?.toString() || ''] || 0
           const hasMailOrder = stripeData?.some(event => 
-            event.user_id === modelRun.user_id.toString() && event.pack_type === 'mail_order'
+            event.user_id === modelRun?.user_id?.toString() && event.pack_type === 'mail_order'
           ) || false
           
           let bucket: 'Urgent' | 'Big Spender' | 'Print Order' | 'Remainder'
@@ -428,22 +435,22 @@ export default function Main() {
           
           return {
             sticker_edit_id: stickerEdit.id.toString(),
-            model_run_id: modelRun.id,
+            model_run_id: modelRun?.id,
             status: stickerEdit.status || 'unresolved',
             urgency: stickerEdit.urgency || null,
             bucket: bucket,
             customer_email: userEmail || 'No email',
-            customer_name: `User ${modelRun.user_id}` || 'Unknown',
+            customer_name: `User ${modelRun?.user_id}` || 'Unknown',
             user_email: userEmail || undefined, // Preloaded user email
-            feedback_notes: modelRun.feedback_notes || 'No feedback provided',
-            input_image_url: modelRun.input_image_url || '',
-            output_image_url: modelRun.output_image_url || '',
-            preprocessed_output_image_url: modelRun.preprocessed_output_image_url || '',
+            feedback_notes: modelRun?.feedback_notes || 'No feedback provided',
+            input_image_url: modelRun?.input_image_url || '',
+            output_image_url: modelRun?.output_image_url || '',
+            preprocessed_output_image_url: modelRun?.preprocessed_output_image_url || '',
             initial_edit_image_url: stickerEdit.image_history && stickerEdit.image_history.length > 0 ? stickerEdit.image_history[0] : '',
             image_history: stickerEdit.image_history || [],
             internal_note: stickerEdit.internal_note || null,
-            amount_spent: userSpending[modelRun.user_id.toString()] || 0, // Real Stripe spending data
-            purchased_at: modelRun.created_at,
+            amount_spent: userSpending[modelRun?.user_id.toString()] || 0, // Real Stripe spending data
+            purchased_at: modelRun?.created_at,
             edit_created_at: stickerEdit.created_at,
             edit_updated_at: stickerEdit.updated_at,
             
@@ -547,7 +554,7 @@ export default function Main() {
       if (stickerEdits) {
         // Get unique user IDs to fetch Stripe spending data (same logic as table view)
         const userIds = [...new Set(stickerEdits
-          .map(modelRun => modelRun.user_id)
+          .map(modelRun => modelRun?.user_id)
           .filter(Boolean)
         )]
 
@@ -647,19 +654,19 @@ export default function Main() {
         // Transform data (same logic as table view)
         const transformedData = sortedEdits.map(modelRun => {
           const now = new Date()
-          const createdAt = new Date(modelRun.created_at)
+          const createdAt = new Date(modelRun?.created_at)
           const stickerEdit = Array.isArray(modelRun.y_sticker_edits) ? modelRun.y_sticker_edits[0] : modelRun.y_sticker_edits
           const updatedAt = stickerEdit?.updated_at ? new Date(stickerEdit.updated_at) : createdAt
-          const userEmail = userEmailMap[modelRun.user_id] || null
+          const userEmail = userEmailMap[modelRun?.user_id] || null
           
           const diffMs = now.getTime() - createdAt.getTime()
           const updateDiffMs = updatedAt.getTime() - createdAt.getTime()
           const purchaseToEditMs = stickerEdit?.created_at ? 
             new Date(stickerEdit.created_at).getTime() - createdAt.getTime() : 0
           
-          const userSpendingAmount = userSpending[modelRun.user_id.toString()] || 0
+          const userSpendingAmount = userSpending[modelRun?.user_id.toString()] || 0
           const hasMailOrder = stripeData?.some(event => 
-            event.user_id === modelRun.user_id.toString() && event.pack_type === 'mail_order'
+            event.user_id === modelRun?.user_id.toString() && event.pack_type === 'mail_order'
           ) || false
           
           let bucket: 'Urgent' | 'Big Spender' | 'Print Order' | 'Remainder'
@@ -674,31 +681,31 @@ export default function Main() {
           }
           
           return {
-            sticker_edit_id: stickerEdit?.id?.toString() || modelRun.id,
-            model_run_id: modelRun.id,
+            sticker_edit_id: stickerEdit?.id?.toString() || modelRun?.id,
+            model_run_id: modelRun?.id,
             status: stickerEdit?.status || 'unresolved',
             urgency: stickerEdit?.urgency || null,
             bucket: bucket,
             customer_email: userEmail || 'No email',
-            customer_name: `User ${modelRun.user_id}` || 'Unknown',
-            feedback_notes: modelRun.feedback_notes || 'No feedback provided',
-            input_image_url: modelRun.input_image_url || '',
-            output_image_url: modelRun.output_image_url || '',
-            preprocessed_output_image_url: modelRun.preprocessed_output_image_url || '',
+            customer_name: `User ${modelRun?.user_id}` || 'Unknown',
+            feedback_notes: modelRun?.feedback_notes || 'No feedback provided',
+            input_image_url: modelRun?.input_image_url || '',
+            output_image_url: modelRun?.output_image_url || '',
+            preprocessed_output_image_url: modelRun?.preprocessed_output_image_url || '',
             initial_edit_image_url: stickerEdit?.image_history && stickerEdit.image_history.length > 0 ? stickerEdit.image_history[0] : '',
             image_history: stickerEdit?.image_history || [],
-            amount_spent: userSpending[modelRun.user_id.toString()] || 0,
-            purchased_at: modelRun.created_at,
-            edit_created_at: stickerEdit?.created_at || modelRun.created_at,
-            edit_updated_at: stickerEdit?.updated_at || modelRun.created_at,
+            amount_spent: userSpending[modelRun?.user_id.toString()] || 0,
+            purchased_at: modelRun?.created_at,
+            edit_created_at: stickerEdit?.created_at || modelRun?.created_at,
+            edit_updated_at: stickerEdit?.updated_at || modelRun?.created_at,
             
             days_since_created: Math.floor(diffMs / (1000 * 60 * 60 * 24)),
             hours_since_created: Math.floor(diffMs / (1000 * 60 * 60)),
             minutes_since_created: Math.floor(diffMs / (1000 * 60)),
             time_spent_on_edit: Math.max(1, Math.floor(updateDiffMs / (1000 * 60))),
             purchase_to_edit_delay: Math.floor(Math.abs(purchaseToEditMs) / (1000 * 60 * 60)),
-            last_activity_relative: getRelativeTime(modelRun.created_at),
-            created_at_formatted: new Date(modelRun.created_at).toLocaleDateString('en-US', { 
+            last_activity_relative: getRelativeTime(modelRun?.created_at),
+            created_at_formatted: new Date(modelRun?.created_at).toLocaleDateString('en-US', { 
               month: 'short', 
               day: 'numeric', 
               hour: 'numeric', 

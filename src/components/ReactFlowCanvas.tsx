@@ -82,7 +82,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     console.log(`🌸 Clearing ${tool} output`)
     
     // Remove from selected images if attached
-    const outputImageUrl = outputs[tool]?.imageUrl
+    const outputImageUrl = (outputs[tool] as { imageUrl?: string })?.imageUrl
     if (outputImageUrl) {
       setSelectedImages(prev => prev.filter(img => img !== outputImageUrl))
       setAttachedNodes(prev => {
@@ -296,7 +296,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       updateOutputs(prev => ({
         ...prev,
         [tool]: { 
-          ...prev[tool], 
+          ...(prev[tool] as object || {}), 
           status: 'failed',
           error: 'Please enter a prompt first'
         }
@@ -305,7 +305,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     }
 
     // Prevent duplicate jobs - check if already processing
-    const currentOutput = outputs[tool]
+    const currentOutput = outputs[tool] as { status?: string } | undefined
     if (currentOutput?.status === 'processing') {
       console.log(`⏳ ${tool} is already processing, skipping duplicate request`)
       return
@@ -643,7 +643,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       updateOutputs(prev => ({
         ...prev,
         [tool]: { 
-          ...prev[tool], 
+          ...(prev[tool] as object || {}), 
           status: 'completed', 
           imageUrl: result.imageUrl,
           prompt: prompt,
@@ -660,7 +660,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       updateOutputs(prev => ({
         ...prev,
         [tool]: { 
-          ...prev[tool], 
+          ...(prev[tool] as object || {}), 
           status: 'failed',
           error: errorMessage,
           cancelled: isCancelled
@@ -696,10 +696,10 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       'internal-1': 150, // Base height for internal node
       'user-info-1': 200, // Base height for user info node
       'images-1': 200, // Base height for image node
-      'gemini-output': outputs.gemini?.imageUrl ? 400 : 150, // Expanded when has image
-      'openai-output': outputs.openai?.imageUrl ? 400 : 150,
-      'flux-max-output': outputs.flux_max?.imageUrl ? 400 : 150,
-      'seedream-output': outputs.seedream?.imageUrl ? 400 : 150,
+      'gemini-output': (outputs.gemini as { imageUrl?: string })?.imageUrl ? 400 : 150, // Expanded when has image
+      'openai-output': (outputs.openai as { imageUrl?: string })?.imageUrl ? 400 : 150,
+      'flux-max-output': (outputs.flux_max as { imageUrl?: string })?.imageUrl ? 400 : 150,
+      'seedream-output': (outputs.seedream as { imageUrl?: string })?.imageUrl ? 400 : 150,
       'email-composer': 300
     }
 
@@ -728,7 +728,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     )
 
     return adjustedPositions
-  }, [outputs.gemini?.imageUrl, outputs.openai?.imageUrl, outputs.flux_max?.imageUrl, outputs.seedream?.imageUrl])
+  }, [(outputs.gemini as { imageUrl?: string })?.imageUrl, (outputs.openai as { imageUrl?: string })?.imageUrl, (outputs.flux_max as { imageUrl?: string })?.imageUrl, (outputs.seedream as { imageUrl?: string })?.imageUrl])
 
   const initialNodes: Node[] = useMemo(() => [
     {
@@ -945,11 +945,11 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           setSelectedImages(prev => prev.filter(img => img !== imageUrl))
           
           // Find which node this image belongs to and remove it from attached nodes
-          const fluxImage = outputs.flux?.imageUrl
-          const geminiImage = outputs.gemini?.imageUrl
-          const openaiImage = outputs.openai?.imageUrl
-          const fluxMaxImage = outputs.flux_max?.imageUrl
-          const seedreamImage = outputs.seedream?.imageUrl
+          const fluxImage = (outputs.flux as { imageUrl?: string })?.imageUrl
+          const geminiImage = (outputs.gemini as { imageUrl?: string })?.imageUrl
+          const openaiImage = (outputs.openai as { imageUrl?: string })?.imageUrl
+          const fluxMaxImage = (outputs.flux_max as { imageUrl?: string })?.imageUrl
+          const seedreamImage = (outputs.seedream as { imageUrl?: string })?.imageUrl
           
           setAttachedNodes(prev => {
             const newSet = new Set(prev)

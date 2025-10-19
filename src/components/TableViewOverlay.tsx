@@ -63,14 +63,18 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
       console.log(`📊 Found ${stickerEdits.length} records`)
 
       // Filter out records where model_run data is missing or doesn't meet criteria
-      const validEdits = stickerEdits.filter(edit => 
-        edit.model_run && 
-        edit.model_run.reaction === 'negative' && 
-        !edit.model_run.feedback_addressed
-      )
+      const validEdits = stickerEdits.filter(edit => {
+        const modelRun = Array.isArray(edit.model_run) ? edit.model_run[0] : edit.model_run
+        return modelRun && 
+               modelRun.reaction === 'negative' && 
+               !modelRun.feedback_addressed
+      })
 
       // Step 2: Get user emails for all users
-      const userIds = [...new Set(validEdits.map(edit => edit.model_run.user_id.toString()))]
+      const userIds = [...new Set(validEdits.map(edit => {
+        const modelRun = Array.isArray(edit.model_run) ? edit.model_run[0] : edit.model_run
+        return modelRun?.user_id?.toString()
+      }).filter(Boolean))]
       
       const { data: userEmails, error: emailError } = await supabase
         .from('users_populated')
@@ -112,16 +116,19 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
       } else {
         // Priority sorting (exact 4-bucket system from original)
         sortedEdits = [...validEdits].sort((a, b) => {
+          const aModelRun = Array.isArray(a.model_run) ? a.model_run[0] : a.model_run
+          const bModelRun = Array.isArray(b.model_run) ? b.model_run[0] : b.model_run
+          
           // Get user spending totals
-          const aSpending = userSpending[a.model_run.user_id.toString()] || 0
-          const bSpending = userSpending[b.model_run.user_id.toString()] || 0
+          const aSpending = userSpending[aModelRun?.user_id?.toString() || ''] || 0
+          const bSpending = userSpending[bModelRun?.user_id?.toString() || ''] || 0
           
           // Check for mail order customers
           const aHasMailOrder = stripeData?.some(event => 
-            event.user_id === a.model_run.user_id.toString() && event.pack_type === 'mail_order'
+            event.user_id === aModelRun?.user_id?.toString() && event.pack_type === 'mail_order'
           ) || false
           const bHasMailOrder = stripeData?.some(event => 
-            event.user_id === b.model_run.user_id.toString() && event.pack_type === 'mail_order'
+            event.user_id === bModelRun?.user_id?.toString() && event.pack_type === 'mail_order'
           ) || false
           
           // Check for urgency
@@ -172,11 +179,11 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
 
       // Step 6: Transform to interface format (same as original)
       const transformedData: StickerEdit[] = paginatedEdits.map((stickerEdit) => {
-        const modelRun = stickerEdit.model_run
-        const userEmail = userEmailMap[modelRun.user_id.toString()] || 'No email'
-        const spending = userSpending[modelRun.user_id.toString()] || 0
+        const modelRun = Array.isArray(stickerEdit.model_run) ? stickerEdit.model_run[0] : stickerEdit.model_run
+        const userEmail = userEmailMap[modelRun?.user_id?.toString() || ''] || 'No email'
+        const spending = userSpending[modelRun?.user_id?.toString() || ''] || 0
         const hasMailOrder = stripeData?.some(event => 
-          event.user_id === modelRun.user_id.toString() && event.pack_type === 'mail_order'
+          event.user_id === modelRun?.user_id?.toString() && event.pack_type === 'mail_order'
         ) || false
         
         // Determine bucket (exact same logic as original)
@@ -193,21 +200,21 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
 
         return {
           sticker_edit_id: stickerEdit.id.toString(),
-          model_run_id: modelRun.id,
+          model_run_id: modelRun?.id || '',
           status: stickerEdit.status || 'unresolved',
           urgency: stickerEdit.urgency || null,
           bucket,
           customer_email: userEmail,
-          customer_name: `User ${modelRun.user_id}`,
-          feedback_notes: modelRun.feedback_notes || '',
-          input_image_url: modelRun.input_image_url || '',
-          output_image_url: modelRun.output_image_url || '',
-          preprocessed_output_image_url: modelRun.preprocessed_output_image_url || '',
+          customer_name: `User ${modelRun?.user_id || 'unknown'}`,
+          feedback_notes: modelRun?.feedback_notes || '',
+          input_image_url: modelRun?.input_image_url || '',
+          output_image_url: modelRun?.output_image_url || '',
+          preprocessed_output_image_url: modelRun?.preprocessed_output_image_url || '',
           initial_edit_image_url: stickerEdit.image_history?.[0] || '',
           image_history: stickerEdit.image_history || [],
           internal_note: stickerEdit.internal_note || null,
           amount_spent: spending,
-          purchased_at: modelRun.created_at,
+          purchased_at: modelRun?.created_at || '',
           edit_created_at: stickerEdit.created_at,
           edit_updated_at: stickerEdit.updated_at,
           days_since_created: Math.floor((Date.now() - new Date(stickerEdit.created_at).getTime()) / (1000 * 60 * 60 * 24)),
