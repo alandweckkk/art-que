@@ -25,7 +25,7 @@ export default function InfiniteCanvas({ items, onItemSelect, onItemEdit }: Infi
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [velocity, setVelocity] = useState({ x: 0, y: 0 })
   const canvasRef = useRef<HTMLDivElement>(null)
-  const animationRef = useRef<number>()
+  const animationRef = useRef<number | null>(null)
 
   // Initialize canvas items with smart clustering by bucket
   useEffect(() => {
@@ -100,6 +100,7 @@ export default function InfiniteCanvas({ items, onItemSelect, onItemEdit }: Infi
   }, [velocity])
 
   const startMomentumAnimation = useCallback(() => {
+    // eslint-disable-next-line prefer-const
     let currentVelocity = { ...velocity }
     const friction = 0.95
     const minVelocity = 0.5

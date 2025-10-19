@@ -61,7 +61,7 @@ export default function ImageNode({ data }: ImageNodeProps) {
   // Expose the getOrderedImagesForAPI function to parent component
   useEffect(() => {
     if (setGetOrderedImagesForAPI) {
-      setGetOrderedImagesForAPI(() => getOrderedImagesForAPI)
+      setGetOrderedImagesForAPI(() => getOrderedImagesForAPI())
     }
   }, [setGetOrderedImagesForAPI, imageOrder, includeOriginalDesign, includeInputImage, selectedAdditionalImages])
 

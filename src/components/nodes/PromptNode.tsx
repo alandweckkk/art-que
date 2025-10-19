@@ -37,7 +37,7 @@ export default function PromptNode({ data }: PromptNodeProps) {
   const [showTemplates, setShowTemplates] = useState(false)
   const [showCreateTemplate, setShowCreateTemplate] = useState(false)
   const [showCreateNote, setShowCreateNote] = useState(false)
-  const [savedTemplates, setSavedTemplates] = useState<any[]>([])
+  const [savedTemplates, setSavedTemplates] = useState<unknown[]>([])
   const [loading, setLoading] = useState(false)
   const [isOpenAILoading, setIsOpenAILoading] = useState(false)
   const templatesRef = useRef<HTMLDivElement>(null)
@@ -330,11 +330,13 @@ export default function PromptNode({ data }: PromptNodeProps) {
                     <div className="px-3 py-1 text-xs font-medium text-gray-500 mb-1">
                       Saved Templates
                     </div>
-                    {savedTemplates.map((template) => (
-                      <button
-                        key={template.id}
-                        onClick={() => {
-                          const templatePrompt = template.prompt || ''
+                    {savedTemplates.map((template) => {
+                      const typedTemplate = template as { id: string; prompt: string; name: string; urls?: string[]; raw_notes?: string }
+                      return (
+                        <button
+                          key={typedTemplate.id}
+                          onClick={() => {
+                            const templatePrompt = typedTemplate.prompt || ''
                           
                           // Check if template contains <feedback> variable
                           if (templatePrompt.includes('<feedback>')) {
@@ -347,9 +349,9 @@ export default function PromptNode({ data }: PromptNodeProps) {
                           }
                           
                           // Add template URLs to additional images if they exist
-                          if (template.urls && template.urls.length > 0) {
+                          if (typedTemplate.urls && typedTemplate.urls.length > 0) {
                             const newImages = [...additionalImages]
-                            template.urls.forEach((url: string) => {
+                            typedTemplate.urls.forEach((url: string) => {
                               if (url.trim() && !newImages.includes(url.trim())) {
                                 newImages.push(url.trim())
                               }
@@ -360,11 +362,12 @@ export default function PromptNode({ data }: PromptNodeProps) {
                           setShowTemplates(false)
                         }}
                         className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                        title={template.raw_notes || template.prompt}
+                        title={typedTemplate.raw_notes || typedTemplate.prompt}
                       >
-                        {template.name || 'Untitled'}
+                        {typedTemplate.name || 'Untitled'}
                       </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 </>
               )}

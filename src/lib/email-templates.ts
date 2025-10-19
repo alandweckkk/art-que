@@ -12,7 +12,7 @@ interface TemplateData {
 }
 
 // Alias for consistency with reference project
-interface EmailTemplateData extends TemplateData {}
+type EmailTemplateData = TemplateData
 
 interface EmailTemplate {
   subject: string;

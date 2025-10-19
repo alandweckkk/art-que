@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 interface InternalNodeData {
   internalNotes: string
   setInternalNotes: (value: string) => void
-  sticker: any // We'll need the sticker data to save to Supabase
+  sticker: { model_run_id: string; sticker_edit_id: string } // We'll need the sticker data to save to Supabase
 }
 
 interface InternalNodeProps {

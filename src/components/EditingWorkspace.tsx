@@ -282,7 +282,7 @@ function EditNodeComponent({ node, onMove }: EditNodeComponentProps) {
         {/* Prompt Preview */}
         {node.prompt && (
           <div className="text-xs text-gray-600 truncate">
-            "{node.prompt}"
+            &quot;{node.prompt}&quot;
           </div>
         )}
 

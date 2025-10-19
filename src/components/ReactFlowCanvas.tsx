@@ -48,7 +48,7 @@ const nodeTypes = {
 }
 
 // Utility functions for localStorage persistence
-const saveOutputsToStorage = (modelRunId: string, outputs: Record<string, any>) => {
+const saveOutputsToStorage = (modelRunId: string, outputs: Record<string, unknown>) => {
   try {
     localStorage.setItem(modelRunId, JSON.stringify(outputs))
   } catch (error) {
@@ -56,7 +56,7 @@ const saveOutputsToStorage = (modelRunId: string, outputs: Record<string, any>) 
   }
 }
 
-const loadOutputsFromStorage = (modelRunId: string): Record<string, any> | null => {
+const loadOutputsFromStorage = (modelRunId: string): Record<string, unknown> | null => {
   try {
     const stored = localStorage.getItem(modelRunId)
     return stored ? JSON.parse(stored) : null
@@ -68,7 +68,7 @@ const loadOutputsFromStorage = (modelRunId: string): Record<string, any> | null 
 
 export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplete, currentIndex, totalCount }: ReactFlowCanvasProps) {
   // Helper function to update outputs in both RAM and localStorage
-  const updateOutputs = (updater: (prev: Record<string, any>) => Record<string, any>) => {
+  const updateOutputs = (updater: (prev: Record<string, unknown>) => Record<string, unknown>) => {
     setOutputs(prev => {
       const newOutputs = updater(prev)
       // Save to localStorage
@@ -191,7 +191,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       const activeElement = document.activeElement
       const isInputFocused = activeElement?.tagName === 'INPUT' || 
                             activeElement?.tagName === 'TEXTAREA' || 
-                            (activeElement as any)?.contentEditable === 'true'
+                            (activeElement as HTMLElement)?.contentEditable === 'true'
       
       if (isInputFocused) return
 
@@ -245,7 +245,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
   }, [currentIndex, totalCount, onPrevious, onNext])
 
   // Output states
-  const [outputs, setOutputs] = useState<Record<string, any>>({})
+  const [outputs, setOutputs] = useState<Record<string, unknown>>({})
   
   // Email functionality state
   const [selectedImages, setSelectedImages] = useState<string[]>([])

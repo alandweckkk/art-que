@@ -704,7 +704,7 @@ function OutputNode({ title, tool, x, y, output, onGenerate }: OutputNodeProps) 
                     <div className="font-medium">{title} Output</div>
                     {output?.prompt && (
                       <div className="text-gray-300 mt-1">
-                        "{output.prompt.length > 50 ? output.prompt.substring(0, 50) + '...' : output.prompt}"
+                        &quot;{output.prompt.length > 50 ? output.prompt.substring(0, 50) + '...' : output.prompt}&quot;
                       </div>
                     )}
                     {output?.timestamp && (
@@ -726,7 +726,7 @@ function OutputNode({ title, tool, x, y, output, onGenerate }: OutputNodeProps) 
         {/* Prompt Preview - Only show if there's an image */}
         {output?.imageUrl && output?.prompt && (
           <div className="text-xs text-gray-600 line-clamp-2 leading-relaxed">
-            "{output.prompt}"
+            &quot;{output.prompt}&quot;
           </div>
         )}
       </div>
@@ -851,7 +851,7 @@ function EditOutputNode({ output }: EditOutputNodeProps) {
                     <div className="font-medium capitalize">{output.tool} Output</div>
                     {output.prompt && (
                       <div className="text-gray-300 mt-1">
-                        "{output.prompt.length > 50 ? output.prompt.substring(0, 50) + '...' : output.prompt}"
+                        &quot;{output.prompt.length > 50 ? output.prompt.substring(0, 50) + '...' : output.prompt}&quot;
                       </div>
                     )}
                     <div className="text-gray-400 text-[10px] mt-1">
@@ -869,7 +869,7 @@ function EditOutputNode({ output }: EditOutputNodeProps) {
         {/* Prompt Preview - Only show if there's an image */}
         {output.imageUrl && output.prompt && (
           <div className="text-xs text-gray-600 line-clamp-2 leading-relaxed mb-2">
-            "{output.prompt}"
+            &quot;{output.prompt}&quot;
           </div>
         )}
 

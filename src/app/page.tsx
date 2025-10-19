@@ -58,15 +58,19 @@ export default function Home() {
 
       if (stickerEdits) {
         // Filter out records where model_run data is missing or doesn't meet criteria
-        const validEdits = stickerEdits.filter(edit => 
-          edit.model_run && 
-          edit.model_run.reaction === 'negative' && 
-          !edit.model_run.feedback_addressed
-        )
+        const validEdits = stickerEdits.filter(edit => {
+          const modelRun = Array.isArray(edit.model_run) ? edit.model_run[0] : edit.model_run
+          return modelRun && 
+                 modelRun.reaction === 'negative' && 
+                 !modelRun.feedback_addressed
+        })
         
         // Get unique user IDs for spending data (needed for sorting)
         const userIds = [...new Set(validEdits
-          .map(edit => edit.model_run.user_id)
+          .map(edit => {
+            const modelRun = Array.isArray(edit.model_run) ? edit.model_run[0] : edit.model_run
+            return modelRun?.user_id
+          })
           .filter(Boolean)
         )]
 
@@ -94,14 +98,17 @@ export default function Home() {
         } else {
           // Priority sorting (4-bucket system)
           sortedEdits = [...validEdits].sort((a, b) => {
-            const aSpending = userSpending[a.model_run.user_id.toString()] || 0
-            const bSpending = userSpending[b.model_run.user_id.toString()] || 0
+            const aModelRun = Array.isArray(a.model_run) ? a.model_run[0] : a.model_run
+            const bModelRun = Array.isArray(b.model_run) ? b.model_run[0] : b.model_run
+            
+            const aSpending = userSpending[aModelRun?.user_id?.toString() || ''] || 0
+            const bSpending = userSpending[bModelRun?.user_id?.toString() || ''] || 0
             
             const aHasMailOrder = stripeData?.some(event => 
-              event.user_id === a.model_run.user_id.toString() && event.pack_type === 'mail_order'
+              event.user_id === aModelRun?.user_id?.toString() && event.pack_type === 'mail_order'
             ) || false
             const bHasMailOrder = stripeData?.some(event => 
-              event.user_id === b.model_run.user_id.toString() && event.pack_type === 'mail_order'
+              event.user_id === bModelRun?.user_id?.toString() && event.pack_type === 'mail_order'
             ) || false
             
             // Bucket 1: Urgency records
@@ -185,16 +192,16 @@ export default function Home() {
       if (error) throw error
 
       if (stickerEdit && stickerEdit.model_run) {
-        const modelRun = stickerEdit.model_run
+        const modelRun = Array.isArray(stickerEdit.model_run) ? stickerEdit.model_run[0] : stickerEdit.model_run
         
         // Fetch user email and spending data for this specific user
         // Note: Temporarily disabled email lookup due to users_populated table 500 errors
-        let userEmail = null
+        const userEmail = null
 
         const { data: stripeData } = await supabase
           .from('stripe_captured_events')
           .select('amount, pack_type')
-          .eq('user_id', modelRun.user_id)
+          .eq('user_id', modelRun?.user_id)
 
         const spending = stripeData?.reduce((sum, event) => sum + (event.amount || 0), 0) || 0
         const hasMailOrder = stripeData?.some(event => event.pack_type === 'mail_order') || false
@@ -217,8 +224,8 @@ export default function Home() {
           status: stickerEdit.status || 'unresolved',
           urgency: stickerEdit.urgency || null,
           bucket: bucket,
-          customer_email: userEmail?.email || `user-${modelRun.user_id.slice(0, 8)}`,
-          customer_name: `Customer ${modelRun.user_id.slice(0, 8)}`,
+          customer_email: `user-${modelRun?.user_id?.slice(0, 8) || 'unknown'}`,
+          customer_name: `Customer ${modelRun?.user_id?.slice(0, 8) || 'unknown'}`,
           feedback_notes: modelRun.feedback_notes || 'No feedback provided',
           input_image_url: modelRun.input_image_url || '',
           output_image_url: modelRun.output_image_url || '',

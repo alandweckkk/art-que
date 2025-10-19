@@ -6,13 +6,13 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface UserInfoNodeData {
-  sticker: any // We'll type this properly based on your StickerEdit type
+  sticker: { customer_email: string; model_run_id: string; amount_spent: number; bucket: string; days_since_created: number; edit_created_at?: string; purchased_at?: string } // We'll type this properly based on your StickerEdit type
 }
 
 export default function UserInfoNode({ data }: { data: UserInfoNodeData }) {
   const { sticker } = data
   const [isExpanded, setIsExpanded] = useState(false)
-  const [modelRuns, setModelRuns] = useState<any[]>([])
+  const [modelRuns, setModelRuns] = useState<unknown[]>([])
   const [loading, setLoading] = useState(false)
 
   // Extract user info for chips
@@ -153,7 +153,7 @@ export default function UserInfoNode({ data }: { data: UserInfoNodeData }) {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium text-gray-900">
-            {getDetailedRelativeTime(sticker.edit_created_at || sticker.purchased_at)}
+            {getDetailedRelativeTime(sticker.edit_created_at || sticker.purchased_at || new Date().toISOString())}
           </h3>
           {/* User Info Chips */}
           {userInfo.map((info, index) => (
@@ -190,24 +190,26 @@ export default function UserInfoNode({ data }: { data: UserInfoNodeData }) {
             </div>
           ) : (
             <div className="space-y-4 max-h-[560px] overflow-y-auto">
-              {modelRuns.map((run, index) => (
-              <div key={run.id} className="border border-gray-200 rounded-lg p-3">
+              {modelRuns.map((run, index) => {
+                const typedRun = run as { id: string; input_image_url?: string; output_image_url?: string; created_at: string }
+                return (
+                <div key={typedRun.id} className="border border-gray-200 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-gray-900">
                     Run #{index + 1}
                   </span>
                   <span className="text-xs text-gray-500">
-                    {formatDate(run.created_at)}
+                    {formatDate(typedRun.created_at)}
                   </span>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Input Image */}
                   <div>
-                    {run.input_image_url ? (
+                    {typedRun.input_image_url ? (
                       <div className="w-full h-24 bg-gray-50 rounded border border-gray-200 flex items-center justify-center p-1">
                         <img
-                          src={run.input_image_url}
+                          src={typedRun.input_image_url}
                           alt="Input"
                           className="max-w-full max-h-full object-contain rounded"
                         />
@@ -221,11 +223,11 @@ export default function UserInfoNode({ data }: { data: UserInfoNodeData }) {
 
                   {/* Preprocessed Output Image */}
                   <div>
-                    {run.preprocessed_output_image_url ? (
+                    {typedRun.output_image_url ? (
                       <div className="w-full h-24 bg-gray-50 rounded border border-gray-200 flex items-center justify-center p-1">
                         <img
-                          src={run.preprocessed_output_image_url}
-                          alt="Preprocessed Output"
+                          src={typedRun.output_image_url}
+                          alt="Output"
                           className="max-w-full max-h-full object-contain rounded"
                         />
                       </div>
@@ -242,7 +244,8 @@ export default function UserInfoNode({ data }: { data: UserInfoNodeData }) {
                   <div className="border-b border-gray-100 mt-3"></div>
                 )}
               </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
