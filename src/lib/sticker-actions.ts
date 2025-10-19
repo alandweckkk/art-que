@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase'
-import { globalClientJobQueue } from '@/lib/client-job-queue'
 import { StickerEdit } from '@/types/sticker'
 
 export interface EmailData {
@@ -59,20 +58,13 @@ export const sendFixedArtwork = async (
       ticketNumber: emailData.ticketNumber
     })
 
-    const response = await globalClientJobQueue.enqueue(`Send email ${sticker.model_run_id}`, `Fixed artwork`, async () => {
-      const r = await fetch('/api/send-front-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(emailData)
-      })
-      return r
-    }, {
-      model_run_id: sticker.model_run_id,
-      original_image_url: sticker.preprocessed_output_image_url,
-      selected_images: selectedImages
+    const response = await fetch('/api/send-front-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(emailData)
     })
 
-    const result = await (response as Response).json()
+    const result = await response.json()
     
     if (result.success) {
       alert(`Email sent successfully to ${sticker.customer_email}!\n\nMessage ID: ${result.messageId}`)
@@ -94,28 +86,22 @@ export const sendFixedArtwork = async (
 export const markAsResolved = async (sticker: StickerEdit) => {
   if (!sticker) return
 
-  await globalClientJobQueue.enqueue(`Mark as resolved ${sticker.model_run_id}`, `Resolve`, async () => {
-    // Update the database to mark as resolved
-    const { error } = await supabase
-      .from('model_run')
-      .update({ 
-        feedback_addressed: true,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', sticker.model_run_id)
+  // Update the database to mark as resolved
+  const { error } = await supabase
+    .from('model_run')
+    .update({ 
+      feedback_addressed: true,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', sticker.model_run_id)
 
-    if (error) {
-      console.error('Error marking as resolved:', error)
-      throw new Error(`Failed to mark as resolved: ${error.message || 'Unknown error'}`)
-    }
+  if (error) {
+    console.error('Error marking as resolved:', error)
+    throw new Error(`Failed to mark as resolved: ${error.message || 'Unknown error'}`)
+  }
 
-    console.log(`✅ Marked record ${sticker.model_run_id} as resolved`)
-    return "Marked as resolved"
-  }, {
-    model_run_id: sticker.model_run_id,
-    original_image_url: sticker.preprocessed_output_image_url,
-    selected_images: []
-  })
+  console.log(`✅ Marked record ${sticker.model_run_id} as resolved`)
+  return "Marked as resolved"
 }
 
 export const sendCreditEmail = async (
@@ -155,20 +141,13 @@ export const sendCreditEmail = async (
       ticketNumber: emailData.ticketNumber
     })
 
-    const response = await globalClientJobQueue.enqueue(`Send credit ${sticker.model_run_id}`, `Credit email`, async () => {
-      const r = await fetch('/api/send-front-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(emailData)
-      })
-      return r
-    }, {
-      model_run_id: sticker.model_run_id,
-      original_image_url: sticker.preprocessed_output_image_url,
-      selected_images: selectedImages
+    const response = await fetch('/api/send-front-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(emailData)
     })
 
-    const result = await (response as Response).json()
+    const result = await response.json()
     
     if (result.success) {
       alert(`Credit email sent successfully to ${sticker.customer_email}!\n\nMessage ID: ${result.messageId}`)

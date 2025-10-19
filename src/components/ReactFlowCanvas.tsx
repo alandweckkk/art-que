@@ -19,15 +19,15 @@ import '@xyflow/react/dist/style.css'
 import { StickerEdit } from '@/types/sticker'
 import { sendFixedArtwork, markAsResolved, sendCreditEmail } from '@/lib/sticker-actions'
 import { supabase } from '@/lib/supabase'
-import { globalClientJobQueue, cancelJobsBySource } from '@/lib/client-job-queue'
 import BottomToolbar from './BottomToolbar'
 import FloatingNavigation from './FloatingNavigation'
 import PromptNode from './nodes/PromptNode'
-import ImageNode from './nodes/ImageNode'
+import InputImagesNode from './nodes/InputImagesNode'
 import OutputNode from './nodes/OutputNode'
 import EmailComposerNode from './nodes/EmailComposerNode'
 import InternalNode from './nodes/InternalNode'
 import UserInfoNode from './nodes/UserInfoNode'
+import GeminiNode from './nodes/GeminiNode'
 
 interface ReactFlowCanvasProps {
   sticker: StickerEdit
@@ -40,41 +40,18 @@ interface ReactFlowCanvasProps {
 
 const nodeTypes = {
   promptNode: PromptNode,
-  imageNode: ImageNode,
+  inputImagesNode: InputImagesNode,
   outputNode: OutputNode,
   emailComposerNode: EmailComposerNode,
   internalNode: InternalNode,
   userInfoNode: UserInfoNode,
-}
-
-// Utility functions for localStorage persistence
-const saveOutputsToStorage = (modelRunId: string, outputs: Record<string, unknown>) => {
-  try {
-    localStorage.setItem(modelRunId, JSON.stringify(outputs))
-  } catch (error) {
-    console.warn('Failed to save outputs to localStorage:', error)
-  }
-}
-
-const loadOutputsFromStorage = (modelRunId: string): Record<string, unknown> | null => {
-  try {
-    const stored = localStorage.getItem(modelRunId)
-    return stored ? JSON.parse(stored) : null
-  } catch (error) {
-    console.warn('Failed to load outputs from localStorage:', error)
-    return null
-  }
+  geminiNode: GeminiNode,
 }
 
 export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplete, currentIndex, totalCount }: ReactFlowCanvasProps) {
-  // Helper function to update outputs in both RAM and localStorage
+  // Helper function to update outputs
   const updateOutputs = (updater: (prev: Record<string, unknown>) => Record<string, unknown>) => {
-    setOutputs(prev => {
-      const newOutputs = updater(prev)
-      // Save to localStorage
-      saveOutputsToStorage(sticker.model_run_id, newOutputs)
-      return newOutputs
-    })
+    setOutputs(updater)
   }
 
   // Helper function to clear a specific output node
@@ -101,50 +78,38 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
 
   // Prompt state - prefill with customer feedback
   const [globalPrompt, setGlobalPrompt] = useState(sticker.feedback_notes)
-  const [useGlobalPrompt, setUseGlobalPrompt] = useState(true)
-  const [fluxPrompt, setFluxPrompt] = useState(sticker.feedback_notes)
-  const [geminiPrompt, setGeminiPrompt] = useState(sticker.feedback_notes)
-  const [openaiPrompt, setOpenaiPrompt] = useState(sticker.feedback_notes)
-  const [fluxMaxPrompt, setFluxMaxPrompt] = useState(sticker.feedback_notes)
-  const [seedreamPrompt, setSeedreamPrompt] = useState(sticker.feedback_notes)
   const [includeOriginalDesign, setIncludeOriginalDesign] = useState(true)
   const [includeInputImage, setIncludeInputImage] = useState(false)
   const [additionalImages, setAdditionalImages] = useState<string[]>([])
   const [internalNotes, setInternalNotes] = useState(sticker.internal_note || '')
-  const [getOrderedImagesForAPI, setGetOrderedImagesForAPI] = useState<(() => string[]) | null>(null)
+
+  // Helper function to get selected images
+  const getSelectedImages = () => {
+    const images: string[] = []
+    if (includeOriginalDesign && sticker.preprocessed_output_image_url) {
+      images.push(sticker.preprocessed_output_image_url)
+    }
+    if (includeInputImage && sticker.input_image_url) {
+      images.push(sticker.input_image_url)
+    }
+    // Add selected additional images
+    additionalImages.forEach(img => images.push(img))
+    return images
+  }
 
   // Reset all node states when sticker changes
   useEffect(() => {
-    // Cancel any running jobs from the previous record
-    const previousSource = `Canvas Record ${currentIndex}`
-    const cancelledCount = cancelJobsBySource(previousSource)
-    if (cancelledCount > 0) {
-      console.log(`🚫 Cancelled ${cancelledCount} jobs from previous record`)
-    }
-
     // Reset prompts
     setGlobalPrompt(sticker.feedback_notes)
-    setFluxPrompt(sticker.feedback_notes)
-    setGeminiPrompt(sticker.feedback_notes)
-    setOpenaiPrompt(sticker.feedback_notes)
-    setFluxMaxPrompt(sticker.feedback_notes)
-    setSeedreamPrompt(sticker.feedback_notes)
     
-    // Try to load outputs from localStorage first, fallback to idle state
-    const storedOutputs = loadOutputsFromStorage(sticker.model_run_id)
-    if (storedOutputs) {
-      console.log('🔄 Loaded cached outputs from localStorage for:', sticker.model_run_id)
-      setOutputs(storedOutputs)
-    } else {
-      // Reset to idle state if no cached outputs
-      setOutputs({
-        flux: { status: 'idle' },
-        gemini: { status: 'idle' },
-        openai: { status: 'idle' },
-        flux_max: { status: 'idle' },
-        seedream: { status: 'idle' }
-      })
-    }
+    // Reset to idle state
+    setOutputs({
+      flux: { status: 'idle' },
+      gemini: { status: 'idle' },
+      openai: { status: 'idle' },
+      flux_max: { status: 'idle' },
+      seedream: { status: 'idle' }
+    })
     
     // Reset email and selection states
     setSelectedImages([])
@@ -159,28 +124,6 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     // Reset internal notes
     setInternalNotes(sticker.internal_note || '')
   }, [sticker.model_run_id, currentIndex]) // Use model_run_id as the key for when record changes
-
-  // Pre-fill individual prompts when switching from global to individual
-  useEffect(() => {
-    if (!useGlobalPrompt && globalPrompt) {
-      // Only pre-fill if individual prompts are empty
-      if (!fluxPrompt) {
-        setFluxPrompt(globalPrompt)
-      }
-      if (!geminiPrompt) {
-        setGeminiPrompt(globalPrompt)
-      }
-      if (!openaiPrompt) {
-        setOpenaiPrompt(globalPrompt)
-      }
-      if (!fluxMaxPrompt) {
-        setFluxMaxPrompt(globalPrompt)
-      }
-      if (!seedreamPrompt) {
-        setSeedreamPrompt(globalPrompt)
-      }
-    }
-  }, [useGlobalPrompt, globalPrompt, fluxPrompt, geminiPrompt, openaiPrompt, fluxMaxPrompt, seedreamPrompt])
 
   // Keyboard navigation
   useEffect(() => {
@@ -285,11 +228,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
 
   // Generate with specific tool
   const generateWithTool = async (tool: 'flux' | 'gemini' | 'openai' | 'flux_max' | 'seedream') => {
-    const prompt = useGlobalPrompt ? globalPrompt : 
-                  tool === 'flux' ? fluxPrompt :
-                  tool === 'gemini' ? geminiPrompt :
-                  tool === 'openai' ? openaiPrompt :
-                  tool === 'flux_max' ? fluxMaxPrompt : seedreamPrompt
+    const prompt = globalPrompt
 
     if (!prompt.trim()) {
       console.warn('⚠️ No prompt provided for', tool)
@@ -318,42 +257,33 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     }))
 
     try {
-      // Prepare job context for JobManager UI
-      const jobContext = {
-        model_run_id: sticker.model_run_id,
-        original_image_url: sticker.preprocessed_output_image_url,
-        feedback_notes: sticker.feedback_notes
-      }
+      // Execute the generation directly
+      let result: { imageUrl: string; inputImages: string[] }
+      
+      if (tool === 'gemini') {
+        // Gemini implementation with automatic postProcess chaining
+        console.log('Starting Gemini → postProcess chain with prompt:', prompt)
+        
+        // Step 1: Call Gemini tool
+        const geminiFormData = new FormData()
+        geminiFormData.append('tool', 'gemini')
+        geminiFormData.append('prompt', prompt)
+        geminiFormData.append('debug', 'true')
+        
+        // Collect image URLs
+        const imageUrls: string[] = getSelectedImages()
+        console.log('Image URLs for Gemini:', imageUrls)
+        
+        if (imageUrls.length === 0) {
+          throw new Error('No images selected. Please select at least one image to process.')
+        }
+        
+        geminiFormData.append('imageUrls', imageUrls.join(','))
 
-      const jobName = `${tool.charAt(0).toUpperCase() + tool.slice(1)} on ${sticker.model_run_id}`
-      const source = `Canvas Record ${currentIndex + 1}`
-
-      // Enqueue the job with the global job queue
-      const result = await globalClientJobQueue.enqueue(jobName, source, async () => {
-        if (tool === 'gemini') {
-          // Gemini implementation with automatic postProcess chaining
-          console.log('Starting Gemini → postProcess chain with prompt:', prompt)
-          
-          // Step 1: Call Gemini tool
-          const geminiFormData = new FormData()
-          geminiFormData.append('tool', 'gemini')
-          geminiFormData.append('prompt', prompt)
-          geminiFormData.append('debug', 'true')
-          
-          // Collect image URLs using the custom ordering from ImageNode
-          const imageUrls: string[] = getOrderedImagesForAPI ? getOrderedImagesForAPI() : []
-          console.log('Image URLs for Gemini:', imageUrls)
-          
-          if (imageUrls.length === 0) {
-            throw new Error('No images selected. Please select at least one image to process.')
-          }
-          
-          geminiFormData.append('imageUrls', imageUrls.join(','))
-
-          console.log('Step 1: Calling Gemini API...')
-          
-          // 🐛 DEBUG: Log request details
-          console.group('📤 GEMINI API REQUEST DEBUG')
+        console.log('Step 1: Calling Gemini API...')
+        
+        // 🐛 DEBUG: Log request details
+        console.group('📤 GEMINI API REQUEST DEBUG')
           console.log('🌐 URL:', 'https://tools.makemeasticker.com/api/universal')
           console.log('⚙️ Method:', 'POST')
           console.log('🖼️ Images being sent:', imageUrls.length, 'images')
@@ -493,8 +423,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           const formData = new FormData()
           formData.append('prompt', prompt)
           
-          // Collect image URLs using the custom ordering from ImageNode
-          const imageUrls: string[] = getOrderedImagesForAPI ? getOrderedImagesForAPI() : []
+          // Collect image URLs
+          const imageUrls: string[] = getSelectedImages()
           
           // Add each imageUrl separately
           imageUrls.forEach(url => formData.append('imageUrls', url))
@@ -581,8 +511,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           const formData = new FormData()
           formData.append('prompt', prompt)
           
-          // Collect image URLs using the custom ordering from ImageNode
-          const imageUrls: string[] = getOrderedImagesForAPI ? getOrderedImagesForAPI() : []
+          // Collect image URLs
+          const imageUrls: string[] = getSelectedImages()
           
           // Add each imageUrl separately
           imageUrls.forEach(url => formData.append('imageUrls', url))
@@ -633,13 +563,12 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           return { imageUrl: result.data.imageUrl, inputImages: imageUrls }
 
         } else {
-          // TODO: Implement other tools (flux)
-          await new Promise(resolve => setTimeout(resolve, 3000))
-          return { imageUrl: sticker.preprocessed_output_image_url, inputImages: [] }
-        }
-      }, jobContext)
+        // TODO: Implement other tools (flux)
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        result = { imageUrl: sticker.preprocessed_output_image_url || '', inputImages: [] }
+      }
 
-      // Job completed successfully - update the outputs
+      // Generation completed successfully - update the outputs
       updateOutputs(prev => ({
         ...prev,
         [tool]: { 
@@ -681,6 +610,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     const basePositions = {
       'prompt-1': { x: 50, y: 250 },
       'images-1': { x: 400, y: 250 },
+      'gemini-node': { x: 750, y: 250 },
       'gemini-output': { x: 750, y: 250 },
       'openai-output': { x: 750, y: 320 },
       'flux-max-output': { x: 750, y: 390 },
@@ -738,18 +668,6 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       data: { 
         globalPrompt,
         setGlobalPrompt,
-        useGlobalPrompt,
-        setUseGlobalPrompt,
-        fluxPrompt,
-        setFluxPrompt,
-        geminiPrompt,
-        setGeminiPrompt,
-        openaiPrompt,
-        setOpenaiPrompt,
-        fluxMaxPrompt,
-        setFluxMaxPrompt,
-        additionalImages,
-        setAdditionalImages,
       },
     },
     {
@@ -772,7 +690,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     },
     {
       id: 'images-1',
-      type: 'imageNode',
+      type: 'inputImagesNode',
       position: nodePositions['images-1'],
       data: { 
         sticker,
@@ -782,7 +700,49 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         setIncludeInputImage,
         additionalImages,
         setAdditionalImages,
-        setGetOrderedImagesForAPI,
+      },
+    },
+    {
+      id: 'gemini-node',
+      type: 'geminiNode',
+      position: nodePositions['gemini-node'],
+      data: { 
+        title: 'Gemini',
+        tool: 'gemini' as const,
+        output: outputs.gemini,
+        onGenerate: async () => {
+          // Mock generation - set to processing
+          updateOutputs(prev => ({
+            ...prev,
+            gemini: { status: 'processing', prompt: globalPrompt, imageUrl: '', timestamp: new Date() }
+          }))
+          
+          // Wait 5 seconds
+          await new Promise(resolve => setTimeout(resolve, 5000))
+          
+          // Set to completed with placeholder image
+          updateOutputs(prev => ({
+            ...prev,
+            gemini: { 
+              status: 'completed', 
+              prompt: globalPrompt, 
+              imageUrl: 'https://placehold.co/512x512/f97316/white?text=Gemini+Generated',
+              timestamp: new Date()
+            }
+          }))
+        },
+        onAttachToEmail: (imageUrl: string) => {
+          console.log('Attaching Gemini image:', imageUrl)
+          if (!selectedImages.includes(imageUrl)) {
+            setSelectedImages(prev => [...prev, imageUrl])
+          }
+          setAttachedNodes(prev => {
+            const newSet = new Set([...prev, 'gemini-node'])
+            console.log('Updated attached nodes:', Array.from(newSet))
+            return newSet
+          })
+        },
+        onClear: () => clearOutput('gemini'),
       },
     },
     // {
@@ -810,110 +770,110 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     //       onPromptChange: setFluxPrompt,
     //     },
     // },
-    {
-      id: 'gemini-output',
-      type: 'outputNode',
-      position: nodePositions['gemini-output'],
-        data: { 
-          title: 'Gemini',
-          tool: 'gemini',
-          output: outputs.gemini,
-          onGenerate: () => generateWithTool('gemini'),
-          onAttachToEmail: (imageUrl: string) => {
-            console.log('Attaching Gemini image:', imageUrl)
-            if (!selectedImages.includes(imageUrl)) {
-              setSelectedImages(prev => [...prev, imageUrl])
-            }
-            setAttachedNodes(prev => {
-              const newSet = new Set([...prev, 'gemini-output'])
-              console.log('Updated attached nodes:', Array.from(newSet))
-              return newSet
-            })
-          },
-          onClear: () => clearOutput('gemini'),
-          useGlobalPrompt,
-          individualPrompt: geminiPrompt,
-          onPromptChange: setGeminiPrompt,
-        },
-    },
-    {
-      id: 'openai-output',
-      type: 'outputNode',
-      position: nodePositions['openai-output'],
-        data: { 
-          title: 'OpenAI',
-          tool: 'openai',
-          output: outputs.openai,
-          onGenerate: () => generateWithTool('openai'),
-          onAttachToEmail: (imageUrl: string) => {
-            console.log('Attaching OpenAI image:', imageUrl)
-            if (!selectedImages.includes(imageUrl)) {
-              setSelectedImages(prev => [...prev, imageUrl])
-            }
-            setAttachedNodes(prev => {
-              const newSet = new Set([...prev, 'openai-output'])
-              console.log('Updated attached nodes:', Array.from(newSet))
-              return newSet
-            })
-          },
-          onClear: () => clearOutput('openai'),
-          useGlobalPrompt,
-          individualPrompt: openaiPrompt,
-          onPromptChange: setOpenaiPrompt,
-        },
-    },
-    {
-      id: 'flux-max-output',
-      type: 'outputNode',
-      position: nodePositions['flux-max-output'],
-        data: { 
-          title: 'Flux Max',
-          tool: 'flux_max',
-          output: outputs.flux_max,
-          onGenerate: () => generateWithTool('flux_max'),
-          onAttachToEmail: (imageUrl: string) => {
-            console.log('Attaching Flux Max image:', imageUrl)
-            if (!selectedImages.includes(imageUrl)) {
-              setSelectedImages(prev => [...prev, imageUrl])
-            }
-            setAttachedNodes(prev => {
-              const newSet = new Set([...prev, 'flux-max-output'])
-              console.log('Updated attached nodes:', Array.from(newSet))
-              return newSet
-            })
-          },
-          onClear: () => clearOutput('flux_max'),
-          useGlobalPrompt,
-          individualPrompt: fluxMaxPrompt,
-          onPromptChange: setFluxMaxPrompt,
-        },
-    },
-    {
-      id: 'seedream-output',
-      type: 'outputNode',
-      position: nodePositions['seedream-output'],
-        data: { 
-          title: 'SeeDream',
-          tool: 'seedream',
-          output: outputs.seedream,
-          onGenerate: () => generateWithTool('seedream'),
-          onAttachToEmail: (imageUrl: string) => {
-            console.log('Attaching SeeDream image:', imageUrl)
-            if (!selectedImages.includes(imageUrl)) {
-              setSelectedImages(prev => [...prev, imageUrl])
-            }
-            setAttachedNodes(prev => {
-              const newSet = new Set([...prev, 'seedream-output'])
-              console.log('Updated attached nodes:', Array.from(newSet))
-              return newSet
-            })
-          },
-          onClear: () => clearOutput('seedream'),
-          useGlobalPrompt,
-          individualPrompt: seedreamPrompt,
-          onPromptChange: setSeedreamPrompt,
-        },
-    },
+    // {
+    //   id: 'gemini-output',
+    //   type: 'outputNode',
+    //   position: nodePositions['gemini-output'],
+    //     data: { 
+    //       title: 'Gemini',
+    //       tool: 'gemini',
+    //       output: outputs.gemini,
+    //       onGenerate: () => generateWithTool('gemini'),
+    //       onAttachToEmail: (imageUrl: string) => {
+    //         console.log('Attaching Gemini image:', imageUrl)
+    //         if (!selectedImages.includes(imageUrl)) {
+    //           setSelectedImages(prev => [...prev, imageUrl])
+    //         }
+    //         setAttachedNodes(prev => {
+    //           const newSet = new Set([...prev, 'gemini-output'])
+    //           console.log('Updated attached nodes:', Array.from(newSet))
+    //           return newSet
+    //         })
+    //       },
+    //       onClear: () => clearOutput('gemini'),
+    //       useGlobalPrompt,
+    //       individualPrompt: geminiPrompt,
+    //       onPromptChange: setGeminiPrompt,
+    //     },
+    // },
+    // {
+    //   id: 'openai-output',
+    //   type: 'outputNode',
+    //   position: nodePositions['openai-output'],
+    //     data: { 
+    //       title: 'OpenAI',
+    //       tool: 'openai',
+    //       output: outputs.openai,
+    //       onGenerate: () => generateWithTool('openai'),
+    //       onAttachToEmail: (imageUrl: string) => {
+    //         console.log('Attaching OpenAI image:', imageUrl)
+    //         if (!selectedImages.includes(imageUrl)) {
+    //           setSelectedImages(prev => [...prev, imageUrl])
+    //         }
+    //         setAttachedNodes(prev => {
+    //           const newSet = new Set([...prev, 'openai-output'])
+    //           console.log('Updated attached nodes:', Array.from(newSet))
+    //           return newSet
+    //         })
+    //       },
+    //       onClear: () => clearOutput('openai'),
+    //       useGlobalPrompt,
+    //       individualPrompt: openaiPrompt,
+    //       onPromptChange: setOpenaiPrompt,
+    //     },
+    // },
+    // {
+    //   id: 'flux-max-output',
+    //   type: 'outputNode',
+    //   position: nodePositions['flux-max-output'],
+    //     data: { 
+    //       title: 'Flux Max',
+    //       tool: 'flux_max',
+    //       output: outputs.flux_max,
+    //       onGenerate: () => generateWithTool('flux_max'),
+    //       onAttachToEmail: (imageUrl: string) => {
+    //         console.log('Attaching Flux Max image:', imageUrl)
+    //         if (!selectedImages.includes(imageUrl)) {
+    //           setSelectedImages(prev => [...prev, imageUrl])
+    //         }
+    //         setAttachedNodes(prev => {
+    //           const newSet = new Set([...prev, 'flux-max-output'])
+    //           console.log('Updated attached nodes:', Array.from(newSet))
+    //           return newSet
+    //         })
+    //       },
+    //       onClear: () => clearOutput('flux_max'),
+    //       useGlobalPrompt,
+    //       individualPrompt: fluxMaxPrompt,
+    //       onPromptChange: setFluxMaxPrompt,
+    //     },
+    // },
+    // {
+    //   id: 'seedream-output',
+    //   type: 'outputNode',
+    //   position: nodePositions['seedream-output'],
+    //     data: { 
+    //       title: 'SeeDream',
+    //       tool: 'seedream',
+    //       output: outputs.seedream,
+    //       onGenerate: () => generateWithTool('seedream'),
+    //       onAttachToEmail: (imageUrl: string) => {
+    //         console.log('Attaching SeeDream image:', imageUrl)
+    //         if (!selectedImages.includes(imageUrl)) {
+    //           setSelectedImages(prev => [...prev, imageUrl])
+    //         }
+    //         setAttachedNodes(prev => {
+    //           const newSet = new Set([...prev, 'seedream-output'])
+    //           console.log('Updated attached nodes:', Array.from(newSet))
+    //           return newSet
+    //         })
+    //       },
+    //       onClear: () => clearOutput('seedream'),
+    //       useGlobalPrompt,
+    //       individualPrompt: seedreamPrompt,
+    //       onPromptChange: setSeedreamPrompt,
+    //     },
+    // },
     {
       id: 'email-composer',
       type: 'emailComposerNode',
@@ -964,82 +924,96 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         },
       },
     },
-  ], [globalPrompt, useGlobalPrompt, fluxPrompt, geminiPrompt, openaiPrompt, fluxMaxPrompt, seedreamPrompt, includeOriginalDesign, includeInputImage, additionalImages, internalNotes, outputs, sticker, selectedImages, isSendingEmail, isSendingCreditEmail, emailMode, attachedNodes, onNext, nodePositions])
+  ], [globalPrompt, includeOriginalDesign, includeInputImage, additionalImages, internalNotes, outputs, sticker, selectedImages, isSendingEmail, isSendingCreditEmail, emailMode, attachedNodes, onNext, nodePositions])
 
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [
       // Prompt to all outputs
-      { id: 'prompt-flux', source: 'prompt-1', target: 'flux-output', animated: true, style: { stroke: '#8b5cf6' } },
-      { id: 'prompt-gemini', source: 'prompt-1', target: 'gemini-output', animated: true, style: { stroke: '#f97316' } },
-      { id: 'prompt-openai', source: 'prompt-1', target: 'openai-output', animated: true, style: { stroke: '#10b981' } },
-      { id: 'prompt-flux-max', source: 'prompt-1', target: 'flux-max-output', animated: true, style: { stroke: '#6d28d9' } },
-      { id: 'prompt-seedream', source: 'prompt-1', target: 'seedream-output', animated: true, style: { stroke: '#e11d48' } },
+      { id: 'prompt-gemini-node', source: 'prompt-1', target: 'gemini-node', animated: true, style: { stroke: '#f97316' } },
+      // { id: 'prompt-flux', source: 'prompt-1', target: 'flux-output', animated: true, style: { stroke: '#8b5cf6' } },
+      // { id: 'prompt-gemini', source: 'prompt-1', target: 'gemini-output', animated: true, style: { stroke: '#f97316' } },
+      // { id: 'prompt-openai', source: 'prompt-1', target: 'openai-output', animated: true, style: { stroke: '#10b981' } },
+      // { id: 'prompt-flux-max', source: 'prompt-1', target: 'flux-max-output', animated: true, style: { stroke: '#6d28d9' } },
+      // { id: 'prompt-seedream', source: 'prompt-1', target: 'seedream-output', animated: true, style: { stroke: '#e11d48' } },
     ]
 
     // Add image edges if enabled
     if (includeOriginalDesign || includeInputImage) {
       edges.push(
-        { id: 'images-flux', source: 'images-1', target: 'flux-output', animated: true, style: { stroke: '#3b82f6' } },
-        { id: 'images-gemini', source: 'images-1', target: 'gemini-output', animated: true, style: { stroke: '#3b82f6' } },
-        { id: 'images-openai', source: 'images-1', target: 'openai-output', animated: true, style: { stroke: '#3b82f6' } },
-        { id: 'images-flux-max', source: 'images-1', target: 'flux-max-output', animated: true, style: { stroke: '#3b82f6' } },
-        { id: 'images-seedream', source: 'images-1', target: 'seedream-output', animated: true, style: { stroke: '#3b82f6' } }
+        { id: 'images-gemini-node', source: 'images-1', target: 'gemini-node', animated: true, style: { stroke: '#3b82f6' } },
       )
+      // edges.push(
+      //   { id: 'images-flux', source: 'images-1', target: 'flux-output', animated: true, style: { stroke: '#3b82f6' } },
+      //   { id: 'images-gemini', source: 'images-1', target: 'gemini-output', animated: true, style: { stroke: '#3b82f6' } },
+      //   { id: 'images-openai', source: 'images-1', target: 'openai-output', animated: true, style: { stroke: '#3b82f6' } },
+      //   { id: 'images-flux-max', source: 'images-1', target: 'flux-max-output', animated: true, style: { stroke: '#3b82f6' } },
+      //   { id: 'images-seedream', source: 'images-1', target: 'seedream-output', animated: true, style: { stroke: '#3b82f6' } }
+      // )
     }
 
     // Add connections to email composer for attached nodes only
     console.log('Building edges, attached nodes:', Array.from(attachedNodes))
     
-    if (attachedNodes.has('flux-output')) {
-      console.log('Adding Flux → Email edge')
+    if (attachedNodes.has('gemini-node')) {
+      console.log('Adding Gemini Node → Email edge')
       edges.push({ 
-        id: 'flux-email', 
-        source: 'flux-output', 
-        target: 'email-composer', 
-        animated: true, 
-        style: { stroke: '#8b5cf6', strokeWidth: 3, strokeDasharray: '8,4' } 
-      })
-    }
-    if (attachedNodes.has('gemini-output')) {
-      console.log('Adding Gemini → Email edge')
-      edges.push({ 
-        id: 'gemini-email', 
-        source: 'gemini-output', 
+        id: 'gemini-node-email', 
+        source: 'gemini-node', 
         target: 'email-composer', 
         animated: true, 
         style: { stroke: '#f97316', strokeWidth: 3, strokeDasharray: '8,4' } 
       })
     }
-    if (attachedNodes.has('openai-output')) {
-      console.log('Adding OpenAI → Email edge')
-      edges.push({ 
-        id: 'openai-email', 
-        source: 'openai-output', 
-        target: 'email-composer', 
-        animated: true, 
-        style: { stroke: '#10b981', strokeWidth: 3, strokeDasharray: '8,4' } 
-      })
-    }
-    if (attachedNodes.has('flux-max-output')) {
-      console.log('Adding Flux Max → Email edge')
-      edges.push({ 
-        id: 'flux-max-email', 
-        source: 'flux-max-output', 
-        target: 'email-composer', 
-        animated: true, 
-        style: { stroke: '#6d28d9', strokeWidth: 3, strokeDasharray: '8,4' } 
-      })
-    }
-    if (attachedNodes.has('seedream-output')) {
-      console.log('Adding SeeDream → Email edge')
-      edges.push({ 
-        id: 'seedream-email', 
-        source: 'seedream-output', 
-        target: 'email-composer', 
-        animated: true, 
-        style: { stroke: '#e11d48', strokeWidth: 3, strokeDasharray: '8,4' } 
-      })
-    }
+    // if (attachedNodes.has('flux-output')) {
+    //   console.log('Adding Flux → Email edge')
+    //   edges.push({ 
+    //     id: 'flux-email', 
+    //     source: 'flux-output', 
+    //     target: 'email-composer', 
+    //     animated: true, 
+    //     style: { stroke: '#8b5cf6', strokeWidth: 3, strokeDasharray: '8,4' } 
+    //   })
+    // }
+    // if (attachedNodes.has('gemini-output')) {
+    //   console.log('Adding Gemini → Email edge')
+    //   edges.push({ 
+    //     id: 'gemini-email', 
+    //     source: 'gemini-output', 
+    //     target: 'email-composer', 
+    //     animated: true, 
+    //     style: { stroke: '#f97316', strokeWidth: 3, strokeDasharray: '8,4' } 
+    //   })
+    // }
+    // if (attachedNodes.has('openai-output')) {
+    //   console.log('Adding OpenAI → Email edge')
+    //   edges.push({ 
+    //     id: 'openai-email', 
+    //     source: 'openai-output', 
+    //     target: 'email-composer', 
+    //     animated: true, 
+    //     style: { stroke: '#10b981', strokeWidth: 3, strokeDasharray: '8,4' } 
+    //   })
+    // }
+    // if (attachedNodes.has('flux-max-output')) {
+    //   console.log('Adding Flux Max → Email edge')
+    //   edges.push({ 
+    //     id: 'flux-max-email', 
+    //     source: 'flux-max-output', 
+    //     target: 'email-composer', 
+    //     animated: true, 
+    //     style: { stroke: '#6d28d9', strokeWidth: 3, strokeDasharray: '8,4' } 
+    //   })
+    // }
+    // if (attachedNodes.has('seedream-output')) {
+    //   console.log('Adding SeeDream → Email edge')
+    //   edges.push({ 
+    //     id: 'seedream-email', 
+    //     source: 'seedream-output', 
+    //     target: 'email-composer', 
+    //     animated: true, 
+    //     style: { stroke: '#e11d48', strokeWidth: 3, strokeDasharray: '8,4' } 
+    //   })
+    // }
     
     console.log('Final edges:', edges.length, edges.map(e => e.id))
 

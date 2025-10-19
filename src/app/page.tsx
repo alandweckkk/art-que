@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import ReactFlowCanvas from '@/components/ReactFlowCanvas'
-import JobManager from '@/components/JobManager'
 import HelpTooltip from '@/components/HelpTooltip'
 import GlobalSearch from '@/components/GlobalSearch'
 import TableViewOverlay from '@/components/TableViewOverlay'
@@ -524,8 +523,6 @@ export default function Home() {
         currentIndex={currentIndex}
         totalCount={allRecordIds.length}
       />
-
-      <JobManager />
 
       {/* Floating Table View Button */}
       <div className="fixed top-4 left-4 z-[9999]">

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { globalClientJobQueue } from "@/lib/client-job-queue";
 import { ReactSketchCanvas } from "react-sketch-canvas";
 import { Brush, Eraser, Eye, EyeOff, RotateCcw, Wand2 } from "lucide-react";
 
@@ -156,33 +155,30 @@ export function InlineFluxEditor({ imageUrl, onProcessedImage, onError, toolsOnl
     }
     try {
       setIsGenerating(true);
-      await globalClientJobQueue.enqueue(`Flux inline`, `Inline Editor`, async () => {
-        const formData = new FormData();
-        formData.append('image_url', imageUrl);
-        formData.append('prompt', prompt.trim());
-        const maskResponse = await fetch(maskDataUrl);
-        const maskBlob = await maskResponse.blob();
-        if (maskBlob.size < 1000) {
-          throw new Error('Mask appears to be empty or too small. Please paint some areas white to create a mask.');
+      const formData = new FormData();
+      formData.append('image_url', imageUrl);
+      formData.append('prompt', prompt.trim());
+      const maskResponse = await fetch(maskDataUrl);
+      const maskBlob = await maskResponse.blob();
+      if (maskBlob.size < 1000) {
+        throw new Error('Mask appears to be empty or too small. Please paint some areas white to create a mask.');
+      }
+      formData.append('mask', maskBlob, 'mask.png');
+      const response = await fetch('/api/kontext-image', { method: 'POST', body: formData });
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = `HTTP ${response.status}: Failed to process with FLUX Kontext LoRA`;
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error) errorMessage = errorData.error;
+        } catch {
+          if (errorText) errorMessage = errorText;
         }
-        formData.append('mask', maskBlob, 'mask.png');
-        const response = await fetch('/api/kontext-image', { method: 'POST', body: formData });
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorMessage = `HTTP ${response.status}: Failed to process with FLUX Kontext LoRA`;
-          try {
-            const errorData = JSON.parse(errorText);
-            if (errorData.error) errorMessage = errorData.error;
-          } catch {
-            if (errorText) errorMessage = errorText;
-          }
-          throw new Error(errorMessage);
-        }
-        const result = await response.json();
-        if (!result.success || !result.data?.imageUrl) throw new Error(result.error || 'No processed image URL in response');
-        onProcessedImage(result.data.imageUrl);
-        return { imageUrl: result.data.imageUrl } as const
-      })
+        throw new Error(errorMessage);
+      }
+      const result = await response.json();
+      if (!result.success || !result.data?.imageUrl) throw new Error(result.error || 'No processed image URL in response');
+      onProcessedImage(result.data.imageUrl)
     } catch (e) {
       console.error('InlineFluxEditor generate error:', e);
       const msg = e instanceof Error ? e.message : 'Failed to process with FLUX Kontext LoRA';
