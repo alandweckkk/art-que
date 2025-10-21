@@ -102,7 +102,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
   const [body, setBody] = useState(
     emailMode === 'credit' 
       ? `<p>Hey there!</p><p><br></p><p>We're sorry we couldn't fix your sticker this time. We've added a free credit to your account.</p><p><br></p><p>If you have any questions or suggestions to make our product better, we're happy to help!</p><p><br></p><p>Best regards,<br>Alan & MakeMeASticker.com</p>`
-      : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can <a href="https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=${actualUserId}">click here</a> to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
+      : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can <a href="https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=LOADING">click here</a> to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
   )
   
   // Conversation threading state
@@ -210,9 +210,23 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     setBody(
       emailMode === 'credit' 
         ? `<p>Hey there!</p><p><br></p><p>We're sorry we couldn't fix your sticker this time. We've added a free credit to your account.</p><p><br></p><p>If you have any questions or suggestions to make our product better, we're happy to help!</p><p><br></p><p>Best regards,<br>Alan & MakeMeASticker.com</p>`
-        : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can <a href="https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=${actualUserId}">click here</a> to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
+        : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can <a href="https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=LOADING">click here</a> to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
     )
-  }, [emailMode, userId, customerEmail, modelRunId, actualUserId]) // Reset when record changes
+  }, [emailMode, userId, customerEmail, modelRunId]) // Reset when record changes
+
+  // Update the link in the body when actualUserId is fetched
+  useEffect(() => {
+    if (actualUserId && emailMode === 'artwork') {
+      // Update the link in the body with the actual user_id
+      setBody(prevBody => {
+        // Only update if it contains the placeholder or old link
+        if (prevBody.includes('user_id=LOADING') || prevBody.includes(`user_id=`)) {
+          return `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can <a href="https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=${actualUserId}">click here</a> to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
+        }
+        return prevBody // Don't update if user has edited the body
+      })
+    }
+  }, [actualUserId, modelRunId, emailMode])
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -336,6 +350,35 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
           </div> */}
         </div>
       </div>
+
+      {/* Link Preview for Testing */}
+      {emailMode === 'artwork' && (
+        <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+          <div className="text-xs font-medium text-blue-800 mb-1">Generated Link (for testing):</div>
+          <div className="flex items-center gap-2">
+            <code className={`flex-1 text-xs bg-white px-2 py-1 rounded border border-blue-200 overflow-x-auto whitespace-nowrap ${
+              actualUserId ? 'text-blue-900' : 'text-gray-500'
+            }`}>
+              https://makemeasticker.com/artwork?sticker_edit={modelRunId}&user_id={actualUserId || 'LOADING...'}
+            </code>
+            <button
+              onClick={() => {
+                const link = `https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=${actualUserId}`
+                navigator.clipboard.writeText(link)
+              }}
+              disabled={!actualUserId}
+              className={`px-2 py-1 text-xs rounded transition-colors whitespace-nowrap ${
+                actualUserId 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+              title={actualUserId ? "Copy to clipboard" : "Loading user ID..."}
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Email Fields */}
       <div className="px-4 pt-2 pb-3">
