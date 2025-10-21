@@ -18,9 +18,14 @@ interface EmailRecord {
   model_run_id: string | null
   link_views: number | null
   payload: {
-    target: {
-      data: {
-        recipients: Array<{
+    recipients?: Array<{
+      role: string
+      handle: string
+      name?: string
+    }>
+    target?: {
+      data?: {
+        recipients?: Array<{
           role: string
           handle: string
           name?: string
@@ -38,7 +43,14 @@ export default function StatsViewOverlay({ onClose }: StatsViewOverlayProps) {
   // Extract recipient email from payload
   const getRecipientEmail = (email: EmailRecord): string => {
     try {
-      const recipients = email.payload?.target?.data?.recipients || []
+      // Try new webhook structure first (payload.recipients)
+      let recipients = email.payload?.recipients || []
+      
+      // Fall back to old structure (payload.target.data.recipients)
+      if (!recipients || recipients.length === 0) {
+        recipients = email.payload?.target?.data?.recipients || []
+      }
+      
       const toRecipient = recipients.find(r => r.role === 'to')
       return toRecipient?.handle || 'N/A'
     } catch (err) {
@@ -56,12 +68,13 @@ export default function StatsViewOverlay({ onClose }: StatsViewOverlayProps) {
       try {
         console.log('📧 Fetching email history with link views...')
         
-        // First get email history (all outbound emails from front)
+        // Get email history filtered by reason='sticker_edit' (artwork fixes sent to customers)
         const { data: emailHistory, error: fetchError } = await supabase
           .from('z_email_history')
           .select('id, created_at, subject_line, message, seen, seen_at, conversation_id, model_run_id, payload')
           .eq('source', 'front')
           .eq('type', 'outbound')
+          .eq('reason', 'sticker_edit')
           .order('created_at', { ascending: false })
           .limit(50)
 

@@ -64,7 +64,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     toolbar: false, // Disable toolbar for now
   }
   
-  const quillFormats: string[] = []
+  const quillFormats: string[] = ['link'] // Allow links to be displayed and edited
   
   // Convert Quill HTML to email-compatible format
   const getEmailHTML = (htmlContent: string) => {
@@ -93,6 +93,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
   // Editable email fields state - initialize with prop or empty
   const [toEmail, setToEmail] = useState(customerEmail || '')
   const [isLoadingEmail, setIsLoadingEmail] = useState(!customerEmail) // Loading if no email prop provided
+  const [actualUserId, setActualUserId] = useState(userId) // Store the actual user_id from database
   const [subject, setSubject] = useState(
     emailMode === 'credit' 
       ? "We've Added a Free Credit to Your Account" 
@@ -101,7 +102,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
   const [body, setBody] = useState(
     emailMode === 'credit' 
       ? `<p>Hey there!</p><p><br></p><p>We're sorry we couldn't fix your sticker this time. We've added a free credit to your account.</p><p><br></p><p>If you have any questions or suggestions to make our product better, we're happy to help!</p><p><br></p><p>Best regards,<br>Alan & MakeMeASticker.com</p>`
-      : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can click here to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
+      : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can <a href="https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=${actualUserId}">click here</a> to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
   )
   
   // Conversation threading state
@@ -120,18 +121,11 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
         return
       }
 
-      // If we already have an email from props, don't fetch
-      if (customerEmail) {
-        console.log('✅ Using email from props:', customerEmail)
-        setIsLoadingEmail(false)
-        return
-      }
-
       try {
         setIsLoadingEmail(true)
-        console.log('📧 Loading email for model_run_id:', modelRunId)
+        console.log('📧 Loading user data for model_run_id:', modelRunId)
         
-        // Get user_id from model_run, then email from users_populated
+        // Get user_id from model_run (always fetch this for the link)
         const { data: modelRun, error: mrError } = await supabase
           .from('model_run')
           .select('user_id')
@@ -145,6 +139,17 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
         }
 
         if (modelRun?.user_id) {
+          // Store the actual user_id (needed for link even if we have email from props)
+          setActualUserId(modelRun.user_id)
+          
+          // If we already have an email from props, don't fetch email
+          if (customerEmail) {
+            console.log('✅ Using email from props:', customerEmail)
+            setIsLoadingEmail(false)
+            return
+          }
+          
+          // Otherwise, fetch the email
           const { data: user, error: userError } = await supabase
             .from('users_populated')
             .select('email')
@@ -189,6 +194,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     // Reset email to prop value when userId changes (new record loaded)
     setToEmail(customerEmail || '')
     setIsLoadingEmail(!customerEmail)
+    setActualUserId(userId) // Reset to prop value, will be updated when email is fetched
     
     setSubject(
       emailMode === 'credit' 
@@ -198,9 +204,9 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     setBody(
       emailMode === 'credit' 
         ? `<p>Hey there!</p><p><br></p><p>We're sorry we couldn't fix your sticker this time. We've added a free credit to your account.</p><p><br></p><p>If you have any questions or suggestions to make our product better, we're happy to help!</p><p><br></p><p>Best regards,<br>Alan & MakeMeASticker.com</p>`
-        : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can click here to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
+        : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can <a href="https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=${actualUserId}">click here</a> to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
     )
-  }, [emailMode, userId, customerEmail]) // Reset when record changes
+  }, [emailMode, userId, customerEmail, modelRunId, actualUserId]) // Reset when record changes
 
   // Handle click outside to close dropdown
   useEffect(() => {
