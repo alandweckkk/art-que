@@ -19,6 +19,7 @@ export interface EmailData {
   emailMode?: 'credit'
   conversationId?: string
   messageId?: string
+  creditAmount?: number
 }
 
 export const sendFixedArtwork = async (
@@ -118,7 +119,7 @@ export const sendCreditEmail = async (
   sticker: StickerEdit,
   selectedImages: string[],
   setIsSendingCreditEmail: (value: boolean) => void,
-  customEmailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string }
+  customEmailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string; creditAmount?: number }
 ) => {
   if (!sticker) return
 
@@ -142,7 +143,8 @@ export const sendCreditEmail = async (
       customBody: customEmailData?.body,
       emailMode: 'credit',
       conversationId: customEmailData?.conversationId,
-      messageId: customEmailData?.messageId
+      messageId: customEmailData?.messageId,
+      creditAmount: customEmailData?.creditAmount
     }
 
     console.log('📧 Sending credit email with data:', {

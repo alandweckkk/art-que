@@ -22,6 +22,7 @@ interface SendEmailRequest {
   userId?: string;
   conversationId?: string;
   messageId?: string;
+  creditAmount?: number;
 }
 
 interface SendEmailResponse {
@@ -237,9 +238,142 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
     if (result.success) {
       let creditResult: { granted?: boolean; creditLedgerId?: string; error?: string } | undefined;
 
-      if (body.emailMode === 'credit') {
+      // ==========================================
+      // CRITICAL WORK: Track sent emails and mark images as sent
+      // Only do this for actual sends (not drafts or test sends)
+      // ==========================================
+      
+      // Extract model_run_id from ticketNumber (which contains the model_run_id)
+      const modelRunId = body.ticketNumber;
+      
+      // Only track and resolve for actual sends, not drafts/test sends
+      const isActualSend = !body.isDraft && body.sendToCustomer;
+      
+      if (isActualSend) {
         try {
-          const creditAmount = 1;
+        // 1. Insert record into z_email_history to track this email
+        console.log('📝 Inserting email history record...');
+        const { error: emailHistoryError } = await supabase
+          .from('z_email_history')
+          .insert({
+            model_run_id: modelRunId,
+            user_email: body.customerEmail,
+            type: body.emailMode === 'credit' ? 'credit' : 'fixed_artwork',
+            subject_line: emailTemplate.subject,
+            message: emailTemplate.body,
+            conversation_id: body.conversationId || null,
+            message_id: result.message_id || null,
+            source: 'front',
+            payload: result.details || {},
+            reason: body.correctionType || 'manual-correction'
+          });
+        
+        if (emailHistoryError) {
+          console.error('❌ Failed to insert email history:', emailHistoryError);
+        } else {
+          console.log('✅ Email history record created');
+        }
+
+        // 2. Mark images as 'sent_artwork' or 'sent_credit' in y_sticker_edits_generations
+        // Only mark images that were actually attached to the email
+        // Use the original URLs (correctedImageUrls) to match against the database, 
+        // not processedUrls which contain background-removed versions
+        if (body.correctedImageUrls && body.correctedImageUrls.length > 0) {
+          const actionValue = body.emailMode === 'credit' ? 'sent_credit' : 'sent_artwork';
+          console.log(`📝 Marking images as '${actionValue}' in y_sticker_edits_generations...`);
+          const { error: generationsError } = await supabase
+            .from('y_sticker_edits_generations')
+            .update({ 
+              action: actionValue,
+              updated_at: new Date().toISOString()
+            })
+            .eq('model_run_id', modelRunId)
+            .in('output_image_url', body.correctedImageUrls);
+          
+          if (generationsError) {
+            console.error(`❌ Failed to mark generations as ${actionValue}:`, generationsError);
+          } else {
+            console.log(`✅ Marked ${body.correctedImageUrls.length} generation(s) as '${actionValue}'`);
+          }
+        }
+
+        // 3. Mark sticker edit as resolved in y_sticker_edits
+        console.log('📝 Marking sticker edit as resolved...');
+        const { error: stickerEditError } = await supabase
+          .from('y_sticker_edits')
+          .update({ 
+            status: 'resolved',
+            resolved_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('model_run_id', modelRunId);
+        
+        if (stickerEditError) {
+          console.error('❌ Failed to mark sticker edit as resolved:', stickerEditError);
+        } else {
+          console.log('✅ Sticker edit marked as resolved');
+        }
+
+        // 4. Replace output URLs and archive old ones in artwork_history
+        // Only do this if images were actually sent
+        if (body.correctedImageUrls && body.correctedImageUrls.length > 0) {
+          console.log('📝 Updating model_run URLs and archiving old ones...');
+          
+          // First, get the current URLs from model_run
+          const { data: modelRunData, error: fetchError } = await supabase
+            .from('model_run')
+            .select('output_image_url, preprocessed_output_image_url, artwork_history')
+            .eq('id', modelRunId)
+            .single();
+          
+          if (fetchError || !modelRunData) {
+            console.error('❌ Failed to fetch model_run data:', fetchError);
+          } else {
+            // Use first image as the new URL (rule: first image added)
+            const newImageUrl = body.correctedImageUrls[0];
+            const actionValue = body.emailMode === 'credit' ? 'sent_credit' : 'sent_artwork';
+            
+            // Build history entry
+            const historyEntry = {
+              output_image_url: modelRunData.output_image_url,
+              preprocessed_output_image_url: modelRunData.preprocessed_output_image_url,
+              replaced_at: new Date().toISOString(),
+              replaced_by: newImageUrl,
+              reason: actionValue
+            };
+            
+            // Append to existing history (or create new array)
+            const updatedHistory = [...(modelRunData.artwork_history || []), historyEntry];
+            
+            // Update model_run with new URLs and history
+            const { error: updateError } = await supabase
+              .from('model_run')
+              .update({
+                output_image_url: newImageUrl,
+                preprocessed_output_image_url: newImageUrl,
+                artwork_history: updatedHistory,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', modelRunId);
+            
+            if (updateError) {
+              console.error('❌ Failed to update model_run URLs:', updateError);
+            } else {
+              console.log(`✅ Updated model_run URLs to: ${newImageUrl}`);
+              console.log(`✅ Archived old URLs in artwork_history (${updatedHistory.length} entries)`);
+            }
+          }
+        }
+        } catch (trackingError) {
+          console.error('❌ Error tracking email/updating records:', trackingError);
+          // Don't fail the whole request if tracking fails - email was sent successfully
+        }
+      }
+
+      // Handle credit granting (only for actual sends, not test sends)
+      if (isActualSend && body.emailMode === 'credit') {
+        try {
+          const creditAmount = body.creditAmount || 1;
           const emailLower = (body.customerEmail || '').toLowerCase();
           // Look up user_id by email from users_populated
           const { data: userRows, error: userErr } = await supabase

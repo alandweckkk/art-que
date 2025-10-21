@@ -25,11 +25,11 @@ export async function POST(request: NextRequest) {
   const prompt = formData.get('prompt') as string;
   const imageUrls = formData.getAll('imageUrls') as string[];
   const modelRunId = formData.get('modelRunId') as string;
-  const nodeId = formData.get('nodeId') as string || 'g-1';
+  const nodeId = formData.get('nodeId') as string || 'r-1';
   const generationId = formData.get('generationId') as string;
   
   try {
-    console.log('🎯 FAL Gemini 2.5 Flash Edit API called');
+    console.log('🎯 FAL Reve Remix API called');
 
     if (!prompt) {
       console.error('❌ Missing prompt parameter');
@@ -41,13 +41,21 @@ export async function POST(request: NextRequest) {
     if (imageUrls.length === 0) {
       console.error('❌ No image URLs provided');
       return NextResponse.json({ 
-        error: 'At least one image URL is required for image editing' 
+        error: 'At least one image URL is required (1-4 images supported)' 
       }, { status: 400 });
     }
 
-    console.log('📝 Processing Gemini 2.5 Flash Edit request:');
+    if (imageUrls.length > 4) {
+      console.error('❌ Too many image URLs provided');
+      return NextResponse.json({ 
+        error: 'Maximum of 4 images supported' 
+      }, { status: 400 });
+    }
+
+    console.log('📝 Processing Reve Remix request:');
     console.log('   - Prompt:', prompt);
     console.log('   - Image URLs:', imageUrls);
+    console.log('   - Number of images:', imageUrls.length);
 
     // Get FAL API key from environment
     const falApiKey = process.env.FAL_KEY;
@@ -67,17 +75,17 @@ export async function POST(request: NextRequest) {
       prompt: prompt,
       image_urls: imageUrls,
       num_images: 1,
-      output_format: "jpeg" as const,
+      output_format: 'png' as const,
     };
 
-    console.log('🚀 Submitting Gemini 2.5 Flash Edit request...');
+    console.log('🚀 Submitting Reve Remix request...');
     console.log('📞 FAL.AI REQUEST:');
-    console.log('🎯 Model:', 'fal-ai/gemini-25-flash-image/edit');
+    console.log('🎯 Model:', 'fal-ai/reve/remix');
     console.log('🎯 INPUT:');
     console.log(JSON.stringify(falInput, null, 2));
 
     // Submit the request using fal client
-    const result = await fal.subscribe('fal-ai/gemini-25-flash-image/edit', {
+    const result = await fal.subscribe('fal-ai/reve/remix', {
       input: falInput,
       logs: true,
       onQueueUpdate: (update) => {
@@ -99,9 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     const generatedImageUrl = result.data.images[0].url;
-    const description = result.data.description || '';
     console.log('🖼️ Generated image URL:', generatedImageUrl);
-    console.log('📝 Description:', description);
 
     // Download and post-process before uploading to our blob storage
     console.log('📥 Downloading generated image...');
@@ -124,7 +130,7 @@ export async function POST(request: NextRequest) {
     
     // Upload post-processed image to our blob storage
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `gemini-25-edit-${timestamp}.png`;
+    const filename = `reve-remix-${timestamp}.png`;
 
     console.log('📤 Uploading processed sticker to blob storage...');
     const blob = await put(filename, processedBuffer, {
@@ -146,7 +152,6 @@ export async function POST(request: NextRequest) {
             completed_at: new Date().toISOString(),
             metadata: {
               originalUrl: generatedImageUrl,
-              description: description,
               falResponse: result.data
             }
           })
@@ -165,14 +170,13 @@ export async function POST(request: NextRequest) {
       data: {
         imageUrl: blob.url,
         originalUrl: generatedImageUrl,
-        description: description,
         prompt: prompt,
         inputImageUrls: imageUrls
       }
     });
 
   } catch (error) {
-    console.error('❌ FAL Gemini 2.5 Flash Edit API error:', error);
+    console.error('❌ FAL Reve Remix API error:', error);
     
     // Update the generation status to failed if we have modelRunId and generationId
     if (modelRunId && generationId) {
@@ -200,5 +204,6 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
 
 

@@ -6,7 +6,7 @@ import { Flower2, Pencil } from 'lucide-react'
 
 interface GeminiNodeData {
   title: string
-  tool: 'flux' | 'gemini' | 'gemini2' | 'openai' | 'flux_max' | 'seedream'
+  tool: 'flux' | 'gemini' | 'gemini2' | 'openai' | 'flux_max' | 'seedream' | 'reve'
   output?: {
     status: 'idle' | 'processing' | 'completed' | 'failed'
     imageUrl?: string
@@ -51,7 +51,10 @@ export default function GeminiNode({ data }: GeminiNodeProps) {
       case 'flux': return '#8b5cf6'
       case 'flux_max': return '#6d28d9'
       case 'gemini': return '#f97316'
+      case 'gemini2': return '#f97316'
       case 'openai': return '#10b981'
+      case 'seedream': return '#e11d48'
+      case 'reve': return '#10b981'
       default: return '#6b7280'
     }
   }

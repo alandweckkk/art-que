@@ -464,18 +464,19 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
   // Calculate dynamic positions based on node heights
   const nodePositions = useMemo(() => {
     const basePositions = {
-      'text-prompt': { x: 50, y: 50 },
+      'text-prompt': { x: 50, y: 250 },
       'images-1': { x: 400, y: 250 },
       'gemini-node': { x: 750, y: 250 },
       'gemini-node-2': { x: 750, y: 520 },  // Second Gemini node below the first
       'seedream-node': { x: 750, y: 790 },  // Seedream node below Gemini 2
+      'reve-remix-node': { x: 750, y: 1060 },  // Reve Remix node below Seedream
       'gemini-output': { x: 750, y: 250 },
       'openai-output': { x: 750, y: 320 },
       'flux-max-output': { x: 750, y: 390 },
       'seedream-output': { x: 750, y: 460 },
       'email-composer': { x: 1100, y: 250 },
-      'internal-1': { x: 50, y: 250 },
-      'user-info-1': { x: 50, y: 500 }
+      'internal-1': { x: 50, y: 500 },
+      'user-info-1': { x: 50, y: 700 }
     }
 
     // Calculate heights based on node states  
@@ -486,6 +487,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       'gemini-node': getNodeOutput('g-1').imageUrl ? 400 : 150, // Expanded when has image
       'gemini-node-2': getNodeOutput('g-2').imageUrl ? 400 : 150,
       'seedream-node': getNodeOutput('s-1').imageUrl ? 400 : 150,
+      'reve-remix-node': getNodeOutput('r-1').imageUrl ? 400 : 150,
       'email-composer': 300
     }
 
@@ -507,6 +509,15 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       adjustedPositions['seedream-node'].y = Math.max(
         basePositions['seedream-node'].y,
         gemini2Bottom + 10 // 10px gap
+      )
+    }
+    
+    // Adjust Reve Remix position if Seedream has image
+    if (getNodeOutput('s-1').imageUrl) {
+      const seedreamBottom = adjustedPositions['seedream-node'].y + nodeHeights['seedream-node']
+      adjustedPositions['reve-remix-node'].y = Math.max(
+        basePositions['reve-remix-node'].y,
+        seedreamBottom + 10 // 10px gap
       )
     }
 
@@ -656,6 +667,60 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       }
     } catch (error) {
       console.error('Seedream generation error:', error)
+      alert(error instanceof Error ? error.message : 'Failed to generate image')
+      await loadGenerations()
+    }
+  }
+
+  const handleReveRemixGenerate = async () => {
+    if (selectedInputImages.length === 0) {
+      alert('Please select at least one image from the Input Images node')
+      return
+    }
+
+    if (selectedInputImages.length > 4) {
+      alert('Reve Remix supports a maximum of 4 images')
+      return
+    }
+
+    const promptToUse = textPrompt.trim() || globalPrompt.trim()
+    console.log('🎨 Reve Remix Generation - Using prompt:', {
+      textPrompt: textPrompt,
+      globalPrompt: globalPrompt,
+      promptToUse: promptToUse
+    })
+    
+    if (!promptToUse) {
+      alert('Please enter a prompt')
+      return
+    }
+
+    try {
+      const generationId = await createGeneration('r-1', promptToUse, selectedInputImages)
+      await loadGenerations()
+      
+      const formData = new FormData()
+      formData.append('prompt', promptToUse)
+      formData.append('modelRunId', sticker.model_run_id)
+      formData.append('nodeId', 'r-1')
+      formData.append('generationId', generationId)
+      selectedInputImages.forEach(url => formData.append('imageUrls', url))
+
+      const response = await fetch('/api/reve-remix', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+      
+      if (result.success && result.data.imageUrl) {
+        await appendToImageHistory(result.data.imageUrl, 'r-1')
+        await loadGenerations()
+      } else {
+        throw new Error(result.error || 'Failed to generate image')
+      }
+    } catch (error) {
+      console.error('Reve Remix generation error:', error)
       alert(error instanceof Error ? error.message : 'Failed to generate image')
       await loadGenerations()
     }
@@ -1207,6 +1272,35 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         },
       },
     },
+    {
+      id: 'reve-remix-node',
+      type: 'geminiNode',
+      position: nodePositions['reve-remix-node'],
+      data: { 
+        title: 'Reve Remix',
+        tool: 'reve' as const,
+        output: getNodeOutput('r-1'),
+        onGenerate: handleReveRemixGenerate,
+        onAttachToEmail: (imageUrl: string) => {
+          console.log('Attaching Reve Remix image:', imageUrl)
+          if (!selectedImages.includes(imageUrl)) {
+            setSelectedImages(prev => [...prev, imageUrl])
+          }
+          setAttachedNodes(prev => {
+            const newSet = new Set([...prev, 'reve-remix-node'])
+            console.log('Updated attached nodes:', Array.from(newSet))
+            return newSet
+          })
+        },
+        onClear: () => hideGeneration('r-1'),
+        onAddToInputs: (imageUrl: string) => {
+          console.log('Adding Reve Remix output to input images:', imageUrl)
+          if (!additionalImages.includes(imageUrl)) {
+            setAdditionalImages(prev => [...prev, imageUrl])
+          }
+        },
+      },
+    },
     // {
     //   id: 'flux-output',
     //   type: 'outputNode',
@@ -1345,7 +1439,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         customerName: sticker.customer_name,
         userId: sticker.model_run_id, // Using model_run_id as the identifier
         selectedImages: emailMode === 'credit' ? [] : selectedImages, // Clear attachments in credit mode
-        onSend: async (emailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string }) => {
+        onSend: async (emailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string; creditAmount?: number }) => {
           try {
             if (emailMode === 'credit') {
               await sendCreditEmail(sticker, [], setIsSendingCreditEmail, emailData)
@@ -1370,12 +1464,14 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           const geminiImage = getNodeOutput('g-1').imageUrl
           const gemini2Image = getNodeOutput('g-2').imageUrl
           const seedreamImage = getNodeOutput('s-1').imageUrl
+          const reveRemixImage = getNodeOutput('r-1').imageUrl
           
           setAttachedNodes(prev => {
             const newSet = new Set(prev)
             if (imageUrl === geminiImage) newSet.delete('gemini-node')
             if (imageUrl === gemini2Image) newSet.delete('gemini-node-2')
             if (imageUrl === seedreamImage) newSet.delete('seedream-node')
+            if (imageUrl === reveRemixImage) newSet.delete('reve-remix-node')
             console.log('Updated attached nodes after detach:', Array.from(newSet))
             return newSet
           })
@@ -1390,6 +1486,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       { id: 'text-prompt-gemini-node', source: 'text-prompt', target: 'gemini-node', animated: true, style: { stroke: '#8b5cf6' } },
       { id: 'text-prompt-gemini-node-2', source: 'text-prompt', target: 'gemini-node-2', animated: true, style: { stroke: '#8b5cf6' } },
       { id: 'text-prompt-seedream-node', source: 'text-prompt', target: 'seedream-node', animated: true, style: { stroke: '#8b5cf6' } },
+      { id: 'text-prompt-reve-remix-node', source: 'text-prompt', target: 'reve-remix-node', animated: true, style: { stroke: '#8b5cf6' } },
       // { id: 'prompt-flux', source: 'prompt-1', target: 'flux-output', animated: true, style: { stroke: '#8b5cf6' } },
       // { id: 'prompt-gemini', source: 'prompt-1', target: 'gemini-output', animated: true, style: { stroke: '#f97316' } },
       // { id: 'prompt-openai', source: 'prompt-1', target: 'openai-output', animated: true, style: { stroke: '#10b981' } },
@@ -1403,6 +1500,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         { id: 'images-gemini-node', source: 'images-1', target: 'gemini-node', animated: true, style: { stroke: '#3b82f6' } },
         { id: 'images-gemini-node-2', source: 'images-1', target: 'gemini-node-2', animated: true, style: { stroke: '#3b82f6' } },
         { id: 'images-seedream-node', source: 'images-1', target: 'seedream-node', animated: true, style: { stroke: '#3b82f6' } },
+        { id: 'images-reve-remix-node', source: 'images-1', target: 'reve-remix-node', animated: true, style: { stroke: '#3b82f6' } },
       )
       // edges.push(
       //   { id: 'images-flux', source: 'images-1', target: 'flux-output', animated: true, style: { stroke: '#3b82f6' } },
@@ -1444,6 +1542,16 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         target: 'email-composer', 
         animated: true, 
         style: { stroke: '#e11d48', strokeWidth: 3, strokeDasharray: '8,4' } 
+      })
+    }
+    if (attachedNodes.has('reve-remix-node')) {
+      console.log('Adding Reve Remix Node → Email edge')
+      edges.push({ 
+        id: 'reve-remix-node-email', 
+        source: 'reve-remix-node', 
+        target: 'email-composer', 
+        animated: true, 
+        style: { stroke: '#10b981', strokeWidth: 3, strokeDasharray: '8,4' } 
       })
     }
     // if (attachedNodes.has('flux-output')) {

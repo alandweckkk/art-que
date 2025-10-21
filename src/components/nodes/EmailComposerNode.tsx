@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Handle, Position } from '@xyflow/react'
+import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { 
@@ -33,7 +34,7 @@ interface EmailComposerNodeData {
   customerName: string
   userId: string
   selectedImages: string[]
-  onSend: (emailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string }) => void
+  onSend: (emailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string; creditAmount?: number }) => void
   isSending: boolean
   onDetachImage?: (imageUrl: string) => void
   onAttachImage?: (imageUrl: string) => void
@@ -46,6 +47,9 @@ interface EmailComposerNodeProps {
 
 export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
   const { customerEmail, customerName, userId, selectedImages, onSend, isSending, onDetachImage, onAttachImage, emailMode = 'artwork' } = data
+  const searchParams = useSearchParams()
+  const modelRunId = searchParams.get('id') || userId
+  
   const [showUidPopover, setShowUidPopover] = useState(false)
   const [showSendDropdown, setShowSendDropdown] = useState(false)
   const [showNoImagesPopover, setShowNoImagesPopover] = useState(false)
@@ -86,8 +90,9 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     return processed;
   }
   
-  // Editable email fields state - start empty and populate async
-  const [toEmail, setToEmail] = useState('')
+  // Editable email fields state - initialize with prop or empty
+  const [toEmail, setToEmail] = useState(customerEmail || '')
+  const [isLoadingEmail, setIsLoadingEmail] = useState(!customerEmail) // Loading if no email prop provided
   const [subject, setSubject] = useState(
     emailMode === 'credit' 
       ? "We've Added a Free Credit to Your Account" 
@@ -102,40 +107,72 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
   // Conversation threading state
   const [conversationId, setConversationId] = useState('')
   const [messageId, setMessageId] = useState('')
+  const [creditAmount, setCreditAmount] = useState(1)
   
   const isCreditMode = emailMode === 'credit'
 
-  // Fetch user email directly from database
+  // Fetch user email directly from database using URL query param (like TextPromptNode)
   useEffect(() => {
     const loadEmail = async () => {
-      if (!userId) return
+      if (!modelRunId) {
+        console.log('⚠️ No model_run_id available')
+        setIsLoadingEmail(false)
+        return
+      }
+
+      // If we already have an email from props, don't fetch
+      if (customerEmail) {
+        console.log('✅ Using email from props:', customerEmail)
+        setIsLoadingEmail(false)
+        return
+      }
 
       try {
+        setIsLoadingEmail(true)
+        console.log('📧 Loading email for model_run_id:', modelRunId)
+        
         // Get user_id from model_run, then email from users_populated
-        const { data: modelRun } = await supabase
+        const { data: modelRun, error: mrError } = await supabase
           .from('model_run')
           .select('user_id')
-          .eq('id', userId)
+          .eq('id', modelRunId)
           .single()
 
+        if (mrError) {
+          console.error('Error fetching model_run:', mrError)
+          setIsLoadingEmail(false)
+          return
+        }
+
         if (modelRun?.user_id) {
-          const { data: user } = await supabase
+          const { data: user, error: userError } = await supabase
             .from('users_populated')
             .select('email')
             .eq('id', modelRun.user_id)
             .maybeSingle()
 
+          if (userError) {
+            console.error('Error fetching user email:', userError)
+            setIsLoadingEmail(false)
+            return
+          }
+
           if (user?.email) {
+            console.log('✅ Loaded email:', user.email)
             setToEmail(user.email)
+          } else {
+            console.log('⚠️ No email found for user_id:', modelRun.user_id)
           }
         }
       } catch (error) {
         console.error('Error fetching email:', error)
+      } finally {
+        setIsLoadingEmail(false)
       }
     }
 
     loadEmail()
-  }, [userId])
+  }, [modelRunId, customerEmail]) // Depend on modelRunId (from URL) and customerEmail prop
 
   // Clear send status after 3 seconds
   useEffect(() => {
@@ -147,8 +184,12 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     }
   }, [sendStatus])
 
-  // Update state when email mode changes (but don't override fetched email)
+  // Update state when record or email mode changes
   useEffect(() => {
+    // Reset email to prop value when userId changes (new record loaded)
+    setToEmail(customerEmail || '')
+    setIsLoadingEmail(!customerEmail)
+    
     setSubject(
       emailMode === 'credit' 
         ? "We've Added a Free Credit to Your Account" 
@@ -159,7 +200,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
         ? `<p>Hey there!</p><p><br></p><p>We're sorry we couldn't fix your sticker this time. We've added a free credit to your account.</p><p><br></p><p>If you have any questions or suggestions to make our product better, we're happy to help!</p><p><br></p><p>Best regards,<br>Alan & MakeMeASticker.com</p>`
         : `<p>Hi there!</p><p><br></p><p>I just edited your sticker design - you can click here to see the before and after.</p><p><br></p><p>Your note was helpful, but if I missed the mark, just let me know. Thanks so much for making stickers with us, and I'm always happy to edit artworks for you anytime!</p><p><br></p><p>Kind Regards,<br>Chelsea & MakeMeASticker.com Team</p>`
     )
-  }, [emailMode])
+  }, [emailMode, userId, customerEmail]) // Reset when record changes
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -290,19 +331,34 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
           {/* To Field - Takes up more space since emails are longer */}
           <div className="flex items-center flex-[2]">
             <div className="text-xs text-gray-600 w-6 flex-shrink-0 font-medium">To</div>
-            <input 
-              type="email"
-              value={toEmail}
-              onChange={(e) => setToEmail(e.target.value)}
-              className={`flex-1 text-sm text-gray-900 px-2 py-2 border-b focus:outline-none bg-transparent transition-colors ${
+            {isLoadingEmail ? (
+              <div className={`flex-1 px-2 py-2 border-b transition-colors ${
                 isCreditMode 
-                  ? 'border-orange-200 focus:border-orange-400' 
+                  ? 'border-orange-200' 
                   : emailMode === 'artwork'
-                    ? 'border-blue-200 focus:border-blue-400'
-                    : 'border-gray-200 focus:border-blue-400'
-              }`}
-              placeholder="recipient@email.com"
-            />
+                    ? 'border-blue-200'
+                    : 'border-gray-200'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-sm text-gray-500">Loading email...</span>
+                </div>
+              </div>
+            ) : (
+              <input 
+                type="email"
+                value={toEmail}
+                onChange={(e) => setToEmail(e.target.value)}
+                className={`flex-1 text-sm text-gray-900 px-2 py-2 border-b focus:outline-none bg-transparent transition-colors ${
+                  isCreditMode 
+                    ? 'border-orange-200 focus:border-orange-400' 
+                    : emailMode === 'artwork'
+                      ? 'border-blue-200 focus:border-blue-400'
+                      : 'border-gray-200 focus:border-blue-400'
+                }`}
+                placeholder="recipient@email.com"
+              />
+            )}
           </div>
           
           {/* Subject Field - Takes up less space */}
@@ -444,7 +500,8 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                         subject, 
                         body: getEmailHTML(body),
                         conversationId: conversationId.trim() || undefined,
-                        messageId: messageId.trim() || undefined
+                        messageId: messageId.trim() || undefined,
+                        creditAmount: isCreditMode ? creditAmount : undefined
                       })
                       setSendStatus('sent')
                     } catch (error) {
@@ -525,6 +582,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                         isDraft: true,
                         sendToCustomer: true,
                         emailMode: 'credit',
+                        creditAmount: creditAmount,
                         customSubject: subject,
                         customBody: getEmailHTML(body),  // Process the HTML before sending
                         conversationId: conversationId.trim() || undefined,
@@ -611,7 +669,8 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                         subject, 
                         body: getEmailHTML(body),
                         conversationId: conversationId.trim() || undefined,
-                        messageId: messageId.trim() || undefined
+                        messageId: messageId.trim() || undefined,
+                        creditAmount: isCreditMode ? creditAmount : undefined
                       })
                       setSendStatus('sent')
                     } catch (error) {
@@ -652,6 +711,24 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
               <Upload size={14} />
               <span>Drop images</span>
             </div>
+          </div>
+        )}
+
+        {/* Right side - Credit Amount Selector - Only show for credit mode */}
+        {isCreditMode && (
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-orange-800 font-medium">Credits to Add:</label>
+            <select
+              value={creditAmount}
+              onChange={(e) => setCreditAmount(Number(e.target.value))}
+              className="px-3 py-2 text-sm border-2 border-orange-300 rounded-lg bg-white text-orange-900 font-medium focus:outline-none focus:border-orange-500 hover:border-orange-400 transition-colors cursor-pointer"
+            >
+              <option value={1}>1 Credit</option>
+              <option value={2}>2 Credits</option>
+              <option value={3}>3 Credits</option>
+              <option value={5}>5 Credits</option>
+              <option value={10}>10 Credits</option>
+            </select>
           </div>
         )}
       </div>

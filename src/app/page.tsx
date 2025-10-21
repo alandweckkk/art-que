@@ -7,6 +7,7 @@ import ReactFlowCanvas from '@/components/ReactFlowCanvas'
 import HelpTooltip from '@/components/HelpTooltip'
 import GlobalSearch from '@/components/GlobalSearch'
 import TableViewOverlay from '@/components/TableViewOverlay'
+import StatsViewOverlay from '@/components/StatsViewOverlay'
 import { StickerEdit } from '@/types/sticker'
 
 function HomeContent() {
@@ -20,6 +21,7 @@ function HomeContent() {
   const [isEditingPageNumber, setIsEditingPageNumber] = useState(false)
   const [pageNumberInput, setPageNumberInput] = useState('')
   const [showTableOverlay, setShowTableOverlay] = useState(false)
+  const [showStatsOverlay, setShowStatsOverlay] = useState(false)
   
   // Progressive loading state
   const [allRecordIds, setAllRecordIds] = useState<string[]>([]) // All available record IDs
@@ -185,7 +187,7 @@ function HomeContent() {
   }
 
   // Fetch full data for a specific record by ID
-  const fetchSingleRecord = async (recordId: string): Promise<StickerEdit | null> => {
+  const fetchSingleRecord = async (recordId: string, emailMap?: Record<string, string>): Promise<StickerEdit | null> => {
     try {
       const { data: stickerEdit, error } = await supabase
         .from('y_sticker_edits')
@@ -219,8 +221,35 @@ function HomeContent() {
         const modelRun = Array.isArray(stickerEdit.model_run) ? stickerEdit.model_run[0] : stickerEdit.model_run
         
         // Fetch user email and spending data for this specific user
-        // Note: Temporarily disabled email lookup due to users_populated table 500 errors
-        const userEmail = null
+        let userEmail: string | null = null
+        
+        if (modelRun?.user_id) {
+          // First check if email is in the provided emailMap (batch optimization)
+          if (emailMap && emailMap[modelRun.user_id]) {
+            userEmail = emailMap[modelRun.user_id]
+            console.log(`✅ Using cached email for record ${recordId}:`, userEmail)
+          } else {
+            // Fallback: Fetch individually if not in map
+            try {
+              const { data: userData, error: emailError } = await supabase
+                .from('users_populated')
+                .select('email')
+                .eq('id', modelRun.user_id)
+                .maybeSingle()
+              
+              if (emailError) {
+                console.warn(`⚠️ Failed to fetch email for user ${modelRun.user_id}:`, emailError.message)
+              } else if (userData?.email) {
+                userEmail = userData.email
+                console.log(`✅ Fetched email individually for record ${recordId}:`, userEmail)
+              } else {
+                console.warn(`⚠️ No email found for user ${modelRun.user_id}`)
+              }
+            } catch (err) {
+              console.error(`❌ Error fetching email for user ${modelRun.user_id}:`, err)
+            }
+          }
+        }
 
         const { data: stripeData } = await supabase
           .from('stripe_captured_events')
@@ -248,7 +277,7 @@ function HomeContent() {
           status: stickerEdit.status || 'unresolved',
           urgency: stickerEdit.urgency || null,
           bucket: bucket,
-          customer_email: `user-${modelRun?.user_id?.slice(0, 8) || 'unknown'}`,
+          customer_email: userEmail || `user-${modelRun?.user_id?.slice(0, 8) || 'unknown'}`,
           customer_name: `Customer ${modelRun?.user_id?.slice(0, 8) || 'unknown'}`,
           feedback_notes: modelRun.feedback_notes || 'No feedback provided',
           input_image_url: modelRun.input_image_url || '',
@@ -291,10 +320,41 @@ function HomeContent() {
 
     // Load first 3 records immediately
     console.log('🚀 Loading first 3 records immediately...')
+    
+    // OPTIMIZATION: Batch fetch emails for first 3 records
+    const initialRecordIds = recordIds.slice(0, Math.min(3, recordIds.length))
+    
+    const { data: initialEdits } = await supabase
+      .from('y_sticker_edits')
+      .select('id, model_run!y_sticker_edits_model_run_id_fkey(id, user_id)')
+      .in('id', initialRecordIds)
+    
+    const initialUserIds = [...new Set(
+      initialEdits
+        ?.map(edit => {
+          const modelRun = Array.isArray(edit.model_run) ? edit.model_run[0] : edit.model_run
+          return modelRun?.user_id
+        })
+        .filter(Boolean) || []
+    )]
+    
+    const { data: initialEmails } = await supabase
+      .from('users_populated')
+      .select('id, email')
+      .in('id', initialUserIds)
+    
+    const initialEmailMap: Record<string, string> = {}
+    initialEmails?.forEach(user => {
+      if (user.id && user.email) {
+        initialEmailMap[user.id] = user.email
+      }
+    })
+    console.log(`✅ Pre-fetched ${Object.keys(initialEmailMap).length} emails for initial batch`)
+    
     const initialRecords: StickerEdit[] = []
     
-    for (let i = 0; i < Math.min(3, recordIds.length); i++) {
-      const record = await fetchSingleRecord(recordIds[i])
+    for (let i = 0; i < initialRecordIds.length; i++) {
+      const record = await fetchSingleRecord(recordIds[i], initialEmailMap)
       if (record) {
         initialRecords[i] = record
       }
@@ -338,11 +398,44 @@ function HomeContent() {
       setIsBackgroundLoading(true)
       
       const recordsToLoad = Math.min(22, recordIds.length - 3) // Next 22 or remaining
-      const loadPromises: Promise<StickerEdit | null>[] = []
       
-      // Create all fetch promises at once
+      // OPTIMIZATION: Batch fetch emails for all records first
+      console.log('📧 Pre-fetching emails for batch...')
+      const recordsToFetch = recordIds.slice(3, 3 + recordsToLoad)
+      
+      // Get user_ids for all records in this batch
+      const { data: batchEdits } = await supabase
+        .from('y_sticker_edits')
+        .select('id, model_run!y_sticker_edits_model_run_id_fkey(id, user_id)')
+        .in('id', recordsToFetch)
+      
+      const userIds = [...new Set(
+        batchEdits
+          ?.map(edit => {
+            const modelRun = Array.isArray(edit.model_run) ? edit.model_run[0] : edit.model_run
+            return modelRun?.user_id
+          })
+          .filter(Boolean) || []
+      )]
+      
+      // Fetch all emails in ONE query
+      const { data: batchEmails } = await supabase
+        .from('users_populated')
+        .select('id, email')
+        .in('id', userIds)
+      
+      const emailMap: Record<string, string> = {}
+      batchEmails?.forEach(user => {
+        if (user.id && user.email) {
+          emailMap[user.id] = user.email
+        }
+      })
+      console.log(`✅ Pre-fetched ${Object.keys(emailMap).length} emails`)
+      
+      // Create all fetch promises at once (they'll use the email cache)
+      const loadPromises: Promise<StickerEdit | null>[] = []
       for (let i = 3; i < 3 + recordsToLoad; i++) {
-        loadPromises.push(fetchSingleRecord(recordIds[i]))
+        loadPromises.push(fetchSingleRecord(recordIds[i], emailMap))
       }
       
       // Wait for all records to load
@@ -406,7 +499,7 @@ function HomeContent() {
     // If we're moving to record 26+ and it's not loaded yet, load it on-demand
     if (nextIndex >= 25 && nextIndex < allRecordIds.length && !stickerData[nextIndex]) {
       console.log(`📥 Loading record ${nextIndex + 1} on-demand...`)
-      const record = await fetchSingleRecord(allRecordIds[nextIndex])
+      const record = await fetchSingleRecord(allRecordIds[nextIndex]) // No emailMap, will fetch individually
       if (record) {
         setStickerData(prev => {
           const newData = [...prev]
@@ -429,7 +522,7 @@ function HomeContent() {
       // If we're moving to a record that's not loaded yet, load it on-demand
       if (!stickerData[prevIndex]) {
         console.log(`📥 Loading record ${prevIndex + 1} on-demand (going backwards)...`)
-        const record = await fetchSingleRecord(allRecordIds[prevIndex])
+        const record = await fetchSingleRecord(allRecordIds[prevIndex]) // No emailMap, will fetch individually
         if (record) {
           setStickerData(prev => {
             const newData = [...prev]
@@ -459,7 +552,7 @@ function HomeContent() {
       // If navigating to record 26+ and it's not loaded yet, load it on-demand
       if (targetIndex >= 25 && !stickerData[targetIndex]) {
         console.log(`📥 Loading record ${pageNum} on-demand via page navigation...`)
-        const record = await fetchSingleRecord(allRecordIds[targetIndex])
+        const record = await fetchSingleRecord(allRecordIds[targetIndex]) // No emailMap, will fetch individually
         if (record) {
           setStickerData(prev => {
             const newData = [...prev]
@@ -565,17 +658,15 @@ function HomeContent() {
         totalCount={allRecordIds.length}
       />
 
-      {/* Floating Table View Button */}
-      <div className="fixed top-4 left-4 z-[9999]">
+      {/* Floating View Buttons */}
+      <div className="fixed top-4 left-4 z-[9999] flex items-center gap-2">
+        {/* Table View Button */}
         <button
           onClick={() => {
             console.log('Table view clicked')
             setShowTableOverlay(true)
           }}
-          className="bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-lg border border-blue-600 p-3 transition-all duration-200 flex items-center gap-2"
-          style={{
-            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)'
-          }}
+          className="bg-gray-700 hover:bg-gray-600 text-gray-100 rounded-lg shadow-md p-3 transition-all duration-200 flex items-center gap-2"
           title="Switch to table view"
         >
           <svg 
@@ -585,7 +676,7 @@ function HomeContent() {
             fill="none" 
             stroke="currentColor" 
             strokeWidth="2"
-            className="text-white"
+            className="text-gray-100"
           >
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
             <line x1="9" y1="9" x2="21" y2="9"/>
@@ -593,7 +684,32 @@ function HomeContent() {
             <line x1="3" y1="9" x2="3" y2="9"/>
             <line x1="3" y1="15" x2="3" y2="15"/>
           </svg>
-          <span className="text-sm font-medium text-white">Table View</span>
+          <span className="text-sm font-medium text-gray-100">Table View</span>
+        </button>
+
+        {/* Stats View Button */}
+        <button
+          className="flex items-center gap-2 px-3 py-3 bg-gray-600 hover:bg-gray-500 text-gray-100 rounded-lg shadow-md transition-all duration-200"
+          onClick={() => {
+            setShowStatsOverlay(true)
+          }}
+          title="Switch to stats view"
+        >
+          <svg 
+            width="20" 
+            height="20" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="2"
+            className="text-gray-100"
+          >
+            <path d="M3 3v18h18" />
+            <path d="M18 17V9" />
+            <path d="M13 17V5" />
+            <path d="M8 17v-3" />
+          </svg>
+          <span className="text-sm font-medium text-gray-100">Stats View</span>
         </button>
       </div>
 
@@ -610,6 +726,13 @@ function HomeContent() {
             setShowTableOverlay(false)
           }}
           currentRecordId={currentSticker?.model_run_id}
+        />
+      )}
+
+      {/* Stats View Overlay */}
+      {showStatsOverlay && (
+        <StatsViewOverlay
+          onClose={() => setShowStatsOverlay(false)}
         />
       )}
     </div>

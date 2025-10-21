@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { fal } from '@fal-ai/client';
 import { createClient } from '@supabase/supabase-js';
+import { processImageBuffer } from '../postprocess-image/route';
 
 export async function POST(request: NextRequest) {
   // Initialize Supabase client using the same vars as lib/supabase.ts
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
     console.log('🖼️ Generated image URL:', generatedImageUrl);
     console.log('🎲 Seed:', seed);
 
-    // Download and re-upload to our blob storage
+    // Download and post-process before uploading to our blob storage
     console.log('📥 Downloading generated image...');
     const imageResponse = await fetch(generatedImageUrl);
     if (!imageResponse.ok) {
@@ -112,19 +113,26 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    const rawImageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     
-    // Upload to our blob storage
+    // Post-process with sticker pipeline (BG removal + border + cleanup)
+    console.log('🎨 Post-processing with sticker pipeline...');
+    const processedBuffer = await processImageBuffer(rawImageBuffer, {
+      skipBackgroundRemoval: false,  // Remove background first
+      useAdvancedProcessing: true    // Then apply border, centering, cleanup
+    });
+    
+    // Upload post-processed image to our blob storage
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `seedream-v4-edit-${timestamp}.png`;
 
-    console.log('📤 Uploading to blob storage...');
-    const blob = await put(filename, imageBuffer, {
+    console.log('📤 Uploading processed sticker to blob storage...');
+    const blob = await put(filename, processedBuffer, {
       access: 'public',
       contentType: 'image/png',
     });
 
-    console.log('✅ Successfully uploaded to blob storage:', blob.url);
+    console.log('✅ Successfully uploaded sticker to blob storage:', blob.url);
 
     // Update the generation status in the database if we have modelRunId and generationId
     if (modelRunId && generationId) {
