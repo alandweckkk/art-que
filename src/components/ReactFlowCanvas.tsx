@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   ReactFlow,
   MiniMap,
@@ -22,12 +22,15 @@ import { supabase } from '@/lib/supabase'
 import BottomToolbar from './BottomToolbar'
 import FloatingNavigation from './FloatingNavigation'
 import PromptNode from './nodes/PromptNode'
+import PromptNodeDuplicate from './nodes/PromptNodeDuplicate'
+import PromptNodeCopy from './nodes/PromptNodeCopy'
 import InputImagesNode from './nodes/InputImagesNode'
 import OutputNode from './nodes/OutputNode'
 import EmailComposerNode from './nodes/EmailComposerNode'
 import InternalNode from './nodes/InternalNode'
 import UserInfoNode from './nodes/UserInfoNode'
 import GeminiNode from './nodes/GeminiNode'
+import TextPromptNode from './nodes/TextPromptNode'
 
 interface ReactFlowCanvasProps {
   sticker: StickerEdit
@@ -40,44 +43,207 @@ interface ReactFlowCanvasProps {
 
 const nodeTypes = {
   promptNode: PromptNode,
+  promptNodeDuplicate: PromptNodeDuplicate,
+  promptNodeCopy: PromptNodeCopy,
   inputImagesNode: InputImagesNode,
   outputNode: OutputNode,
   emailComposerNode: EmailComposerNode,
   internalNode: InternalNode,
   userInfoNode: UserInfoNode,
   geminiNode: GeminiNode,
+  textPromptNode: TextPromptNode,
 }
 
 export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplete, currentIndex, totalCount }: ReactFlowCanvasProps) {
-  // Helper function to update outputs
-  const updateOutputs = (updater: (prev: Record<string, unknown>) => Record<string, unknown>) => {
-    setOutputs(updater)
+  // Simple state - just track what's currently displayed
+  const [generations, setGenerations] = useState<any[]>([])
+  const [isPolling, setIsPolling] = useState(false)
+
+  // Simple function to create a new generation record
+  const createGeneration = async (
+    nodeId: string,
+    prompt: string,
+    inputImages: string[]
+  ) => {
+    try {
+      const generationId = `${sticker.model_run_id}-${nodeId}-${Date.now()}`
+      
+      const { error } = await supabase
+        .from('y_sticker_edits_generations')
+        .insert({
+          model_run_id: sticker.model_run_id,
+          node_id: nodeId,
+          generation_id: generationId,
+          status: 'processing',
+          prompt: prompt,
+          input_images: inputImages,
+          started_at: new Date().toISOString(),
+          action: 'visible'
+        })
+
+      if (error) {
+        console.error('Failed to create generation:', error)
+        throw error
+      }
+      
+      console.log(`✅ Created generation ${generationId}`)
+      return generationId
+    } catch (error) {
+      console.error('Error creating generation:', error)
+      throw error
+    }
   }
 
-  // Helper function to clear a specific output node
-  const clearOutput = (tool: string) => {
-    console.log(`🌸 Clearing ${tool} output`)
+  // Simple helper to get current output for a node from generations
+  const getNodeOutput = (nodeId: string) => {
+    // Find the most recent generation for this node
+    const nodeGenerations = generations
+      .filter(g => g.node_id === nodeId && g.action === 'visible')
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     
-    // Remove from selected images if attached
-    const outputImageUrl = (outputs[tool] as { imageUrl?: string })?.imageUrl
-    if (outputImageUrl) {
-      setSelectedImages(prev => prev.filter(img => img !== outputImageUrl))
-      setAttachedNodes(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(`${tool}-output`)
-        return newSet
-      })
+    const latest = nodeGenerations[0]
+    if (!latest) return { status: 'idle' }
+    
+    return {
+      status: latest.status,
+      imageUrl: latest.output_image_url,
+      prompt: latest.prompt,
+      inputImages: latest.input_images,
+      generation_id: latest.generation_id
     }
+  }
+
+  // Removed deprecated functions - now using database as single source of truth
+
+  // Helper function to append generated image to image_history
+  const appendToImageHistory = async (imageUrl: string, nodeId: string = 'g1') => {
+    try {
+      console.log(`📸 Adding image to history for model_run_id: ${sticker.model_run_id}`)
+      
+      // Get current image_history
+      const { data: currentData } = await supabase
+        .from('y_sticker_edits')
+        .select('image_history')
+        .eq('model_run_id', sticker.model_run_id)
+        .single()
+
+      const currentHistory = (currentData?.image_history || []) as Array<any>
+
+      // Append new entry
+      const newEntry = {
+        node_id: nodeId,
+        image_url: imageUrl,
+        state: 'visible' as const
+      }
+
+      const updatedHistory = [...currentHistory, newEntry]
+
+      const { error } = await supabase
+        .from('y_sticker_edits')
+        .update({ 
+          image_history: updatedHistory,
+          updated_at: new Date().toISOString()
+        })
+        .eq('model_run_id', sticker.model_run_id)
+
+      if (error) throw error
+      console.log(`✅ Added image to history: ${imageUrl.substring(0, 60)}...`)
+    } catch (error) {
+      console.error('Error appending to image_history:', error)
+    }
+  }
+
+  // Helper function to mark image as deleted in image_history
+  const markImageAsDeleted = async (imageUrl: string) => {
+    try {
+      console.log(`🗑️ Marking image as deleted for model_run_id: ${sticker.model_run_id}`)
+      
+      // Get current image_history
+      const { data: currentData } = await supabase
+        .from('y_sticker_edits')
+        .select('image_history')
+        .eq('model_run_id', sticker.model_run_id)
+        .single()
+
+      const currentHistory = (currentData?.image_history || []) as Array<any>
+
+      // Find and update the entry's state
+      const updatedHistory = currentHistory.map((entry: any) => {
+        if (entry.image_url === imageUrl) {
+          return {
+            ...entry,
+            state: 'deleted' as const
+          }
+        }
+        return entry
+      })
+
+      const { error } = await supabase
+        .from('y_sticker_edits')
+        .update({ 
+          image_history: updatedHistory,
+          updated_at: new Date().toISOString()
+        })
+        .eq('model_run_id', sticker.model_run_id)
+
+      if (error) throw error
+      console.log(`✅ Marked image as deleted: ${imageUrl.substring(0, 60)}...`)
+    } catch (error) {
+      console.error('Error marking image as deleted:', error)
+    }
+  }
+
+  // Simple function to hide a generation
+  const hideGeneration = async (nodeId: string) => {
+    console.log(`🌸 Hiding output for node ${nodeId}`)
     
-    // Reset the output state to idle
-    updateOutputs(prev => ({
-      ...prev,
-      [tool]: { status: 'idle' }
-    }))
+    // Find the latest visible generation for this node
+    const generation = generations
+      .filter(g => g.node_id === nodeId && g.action === 'visible')
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+    
+    if (generation) {
+      // Mark as hidden in database
+      try {
+        const { error } = await supabase
+          .from('y_sticker_edits_generations')
+          .update({ 
+            action: 'hidden',
+            updated_at: new Date().toISOString()
+          })
+          .eq('generation_id', generation.generation_id)
+        
+        if (error) throw error
+        console.log(`✅ Marked generation ${generation.generation_id} as hidden`)
+        
+        // Mark as deleted in image_history if it has an output
+        if (generation.output_image_url) {
+          await markImageAsDeleted(generation.output_image_url)
+          
+          // Remove from email attachments if selected
+          setSelectedImages(prev => prev.filter(img => img !== generation.output_image_url))
+          setAttachedNodes(prev => {
+            const newSet = new Set(prev)
+            // Map node_id to attachment key
+            const attachmentKey = nodeId === 'g-1' ? 'gemini-node' : 
+                                 nodeId === 'g-2' ? 'gemini-node-2' : 
+                                 nodeId
+            newSet.delete(attachmentKey)
+            return newSet
+          })
+        }
+        
+        // Reload generations to update UI
+        loadGenerations()
+      } catch (error) {
+        console.error('Error hiding generation:', error)
+      }
+    }
   }
 
   // Prompt state - prefill with customer feedback
   const [globalPrompt, setGlobalPrompt] = useState(sticker.feedback_notes)
+  const [textPrompt, setTextPrompt] = useState('')
   const [includeOriginalDesign, setIncludeOriginalDesign] = useState(true)
   const [includeInputImage, setIncludeInputImage] = useState(false)
   const [additionalImages, setAdditionalImages] = useState<string[]>([])
@@ -97,19 +263,17 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     return images
   }
 
-  // Reset all node states when sticker changes
+  // Reset everything when sticker changes
   useEffect(() => {
+    console.log('🔄 Record changed, resetting all state')
+    
+    // Clear all state
+    setGenerations([])
+    setIsPolling(false)
+    
     // Reset prompts
     setGlobalPrompt(sticker.feedback_notes)
-    
-    // Reset to idle state
-    setOutputs({
-      flux: { status: 'idle' },
-      gemini: { status: 'idle' },
-      openai: { status: 'idle' },
-      flux_max: { status: 'idle' },
-      seedream: { status: 'idle' }
-    })
+    setTextPrompt('')
     
     // Reset email and selection states
     setSelectedImages([])
@@ -121,9 +285,16 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     setIncludeInputImage(true)
     setAdditionalImages([])
     
+    // Set preprocessed_output_image_url as selected by default
+    const defaultSelectedImages: string[] = []
+    if (sticker.preprocessed_output_image_url) {
+      defaultSelectedImages.push(sticker.preprocessed_output_image_url)
+    }
+    setSelectedInputImages(defaultSelectedImages)
+    
     // Reset internal notes
     setInternalNotes(sticker.internal_note || '')
-  }, [sticker.model_run_id, currentIndex]) // Use model_run_id as the key for when record changes
+  }, [sticker.model_run_id]) // Only depend on model_run_id
 
   // Keyboard navigation
   useEffect(() => {
@@ -156,22 +327,22 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           break
       }
 
-      // Handle combination shortcuts
-      if (pressedKeys.has(' ') && pressedKeys.has('1')) {
-        event.preventDefault()
-        generateWithTool('gemini')
-        pressedKeys.clear() // Clear to prevent repeated triggers
-      }
-      if (pressedKeys.has(' ') && pressedKeys.has('2')) {
-        event.preventDefault()
-        generateWithTool('openai')
-        pressedKeys.clear() // Clear to prevent repeated triggers
-      }
-      if (pressedKeys.has(' ') && pressedKeys.has('3')) {
-        event.preventDefault()
-        generateWithTool('flux_max')
-        pressedKeys.clear() // Clear to prevent repeated triggers
-      }
+      // Handle combination shortcuts - DISABLED FOR NOW
+      // if (pressedKeys.has(' ') && pressedKeys.has('1')) {
+      //   event.preventDefault()
+      //   // TODO: Trigger Gemini node generation
+      //   pressedKeys.clear() // Clear to prevent repeated triggers
+      // }
+      // if (pressedKeys.has(' ') && pressedKeys.has('2')) {
+      //   event.preventDefault()
+      //   // TODO: Trigger OpenAI node generation
+      //   pressedKeys.clear() // Clear to prevent repeated triggers
+      // }
+      // if (pressedKeys.has(' ') && pressedKeys.has('3')) {
+      //   event.preventDefault()
+      //   // TODO: Trigger Flux Max node generation
+      //   pressedKeys.clear() // Clear to prevent repeated triggers
+      // }
     }
 
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -187,8 +358,10 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     }
   }, [currentIndex, totalCount, onPrevious, onNext])
 
-  // Output states
-  const [outputs, setOutputs] = useState<Record<string, unknown>>({})
+  // Removed complex output state - now using database directly
+  
+  // Input image selection state (for passing to generation APIs)
+  const [selectedInputImages, setSelectedInputImages] = useState<string[]>([])
   
   // Email functionality state
   const [selectedImages, setSelectedImages] = useState<string[]>([])
@@ -196,6 +369,61 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
   const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [isSendingCreditEmail, setIsSendingCreditEmail] = useState(false)
   const [emailMode, setEmailMode] = useState<'artwork' | 'credit'>('artwork')
+
+  // Simple function to load generations from database
+  const loadGenerations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('y_sticker_edits_generations')
+        .select('*')
+        .eq('model_run_id', sticker.model_run_id)
+        .eq('action', 'visible')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error loading generations:', error)
+        return
+      }
+
+      setGenerations(data || [])
+      
+      // Check if any are processing
+      const hasProcessing = data?.some(g => g.status === 'processing')
+      setIsPolling(!!hasProcessing)
+    } catch (error) {
+      console.error('Error loading generations:', error)
+    }
+  }
+
+  // Load generations on mount and start polling if needed
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null
+    let mounted = true
+
+    // Initial load
+    loadGenerations()
+
+    // Simple polling - only when we have processing generations
+    const checkAndPoll = () => {
+      if (mounted && isPolling) {
+        pollInterval = setInterval(() => {
+          if (mounted) {
+            loadGenerations()
+          }
+        }, 2000) // Poll every 2 seconds
+      }
+    }
+
+    checkAndPoll()
+
+    // Cleanup
+    return () => {
+      mounted = false
+      if (pollInterval) {
+        clearInterval(pollInterval)
+      }
+    }
+  }, [sticker.model_run_id, isPolling])
 
   // Function to save internal notes to database
   const saveInternalNotes = async (notes: string) => {
@@ -226,72 +454,257 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     return () => clearTimeout(timeoutId)
   }, [internalNotes, sticker.internal_note, sticker.model_run_id])
 
-  // Generate with specific tool
-  const generateWithTool = async (tool: 'flux' | 'gemini' | 'openai' | 'flux_max' | 'seedream') => {
-    const prompt = globalPrompt
+  // TODO: Debounced save for additional images - needs redesign
+  // useEffect(() => {
+  //   // Additional images handling will be redesigned
+  // }, [additionalImages, sticker.model_run_id])
 
-    if (!prompt.trim()) {
-      console.warn('⚠️ No prompt provided for', tool)
-      updateOutputs(prev => ({
-        ...prev,
-        [tool]: { 
-          ...(prev[tool] as object || {}), 
-          status: 'failed',
-          error: 'Please enter a prompt first'
-        }
-      }))
+  // Removed deprecated generateWithTool - each node handles its own generation now
+
+  // Calculate dynamic positions based on node heights
+  const nodePositions = useMemo(() => {
+    const basePositions = {
+      'text-prompt': { x: 50, y: 50 },
+      'images-1': { x: 400, y: 250 },
+      'gemini-node': { x: 750, y: 250 },
+      'gemini-node-2': { x: 750, y: 520 },  // Second Gemini node below the first
+      'seedream-node': { x: 750, y: 790 },  // Seedream node below Gemini 2
+      'gemini-output': { x: 750, y: 250 },
+      'openai-output': { x: 750, y: 320 },
+      'flux-max-output': { x: 750, y: 390 },
+      'seedream-output': { x: 750, y: 460 },
+      'email-composer': { x: 1100, y: 250 },
+      'internal-1': { x: 50, y: 250 },
+      'user-info-1': { x: 50, y: 500 }
+    }
+
+    // Calculate heights based on node states  
+    const nodeHeights = {
+      'internal-1': 150, // Base height for internal node
+      'user-info-1': 200, // Base height for user info node
+      'images-1': 200, // Base height for image node
+      'gemini-node': getNodeOutput('g-1').imageUrl ? 400 : 150, // Expanded when has image
+      'gemini-node-2': getNodeOutput('g-2').imageUrl ? 400 : 150,
+      'seedream-node': getNodeOutput('s-1').imageUrl ? 400 : 150,
+      'email-composer': 300
+    }
+
+    // Adjust positions to prevent overlap
+    const adjustedPositions = { ...basePositions }
+    
+    // Adjust second Gemini position if first has image
+    if (getNodeOutput('g-1').imageUrl) {
+      const geminiBottom = adjustedPositions['gemini-node'].y + nodeHeights['gemini-node']
+      adjustedPositions['gemini-node-2'].y = Math.max(
+        basePositions['gemini-node-2'].y,
+        geminiBottom + 10 // 10px gap
+      )
+    }
+    
+    // Adjust Seedream position if Gemini 2 has image
+    if (getNodeOutput('g-2').imageUrl) {
+      const gemini2Bottom = adjustedPositions['gemini-node-2'].y + nodeHeights['gemini-node-2']
+      adjustedPositions['seedream-node'].y = Math.max(
+        basePositions['seedream-node'].y,
+        gemini2Bottom + 10 // 10px gap
+      )
+    }
+
+    return adjustedPositions
+  }, [generations]) // Depend on generations to recalculate when outputs change
+
+  // Create generation handlers outside of useMemo to avoid stale closures
+  const handleGeminiGenerate = async () => {
+    if (selectedInputImages.length === 0) {
+      alert('Please select at least one image from the Input Images node')
       return
     }
 
-    // Prevent duplicate jobs - check if already processing
-    const currentOutput = outputs[tool] as { status?: string } | undefined
-    if (currentOutput?.status === 'processing') {
-      console.log(`⏳ ${tool} is already processing, skipping duplicate request`)
+    const promptToUse = textPrompt.trim() || globalPrompt.trim()
+    console.log('🎨 Gemini Generation - Using prompt:', {
+      textPrompt: textPrompt,
+      globalPrompt: globalPrompt,
+      promptToUse: promptToUse
+    })
+    
+    if (!promptToUse) {
+      alert('Please enter a prompt')
       return
     }
-
-    // Immediately set processing state
-    updateOutputs(prev => ({
-      ...prev,
-      [tool]: { status: 'processing', prompt, imageUrl: '', timestamp: new Date() }
-    }))
 
     try {
-      // Execute the generation directly
-      let result: { imageUrl: string; inputImages: string[] }
+      const generationId = await createGeneration('g-1', promptToUse, selectedInputImages)
+      await loadGenerations()
       
-      if (tool === 'gemini') {
-        // Gemini implementation with automatic postProcess chaining
-        console.log('Starting Gemini → postProcess chain with prompt:', prompt)
-        
-        // Step 1: Call Gemini tool
-        const geminiFormData = new FormData()
-        geminiFormData.append('tool', 'gemini')
-        geminiFormData.append('prompt', prompt)
-        geminiFormData.append('debug', 'true')
-        
-        // Collect image URLs
-        const imageUrls: string[] = getSelectedImages()
-        console.log('Image URLs for Gemini:', imageUrls)
-        
-        if (imageUrls.length === 0) {
-          throw new Error('No images selected. Please select at least one image to process.')
-        }
-        
-        geminiFormData.append('imageUrls', imageUrls.join(','))
+      const formData = new FormData()
+      formData.append('prompt', promptToUse)
+      formData.append('modelRunId', sticker.model_run_id)
+      formData.append('nodeId', 'g-1')
+      formData.append('generationId', generationId)
+      selectedInputImages.forEach(url => formData.append('imageUrls', url))
 
-        console.log('Step 1: Calling Gemini API...')
-        
-        // 🐛 DEBUG: Log request details
-        console.group('📤 GEMINI API REQUEST DEBUG')
-          console.log('🌐 URL:', 'https://tools.makemeasticker.com/api/universal')
-          console.log('⚙️ Method:', 'POST')
-          console.log('🖼️ Images being sent:', imageUrls.length, 'images')
-          imageUrls.forEach((url, i) => console.log(`  ${i + 1}:`, url.substring(0, 100) + (url.length > 100 ? '...' : '')))
-          console.log('💬 Prompt:', prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''))
-          console.groupEnd()
-          
-          const geminiResponse = await fetch('https://tools.makemeasticker.com/api/universal', {
+      const response = await fetch('/api/new-fal-gemini-2.5', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+      
+      if (result.success && result.data.imageUrl) {
+        await appendToImageHistory(result.data.imageUrl, 'g-1')
+        await loadGenerations()
+      } else {
+        throw new Error(result.error || 'Failed to generate image')
+      }
+    } catch (error) {
+      console.error('Gemini generation error:', error)
+      alert(error instanceof Error ? error.message : 'Failed to generate image')
+      await loadGenerations()
+    }
+  }
+
+  const handleGemini2Generate = async () => {
+    if (selectedInputImages.length === 0) {
+      alert('Please select at least one image from the Input Images node')
+      return
+    }
+
+    const promptToUse = textPrompt.trim() || globalPrompt.trim()
+    console.log('🎨 Gemini 2 Generation - Using prompt:', {
+      textPrompt: textPrompt,
+      globalPrompt: globalPrompt,
+      promptToUse: promptToUse
+    })
+    
+    if (!promptToUse) {
+      alert('Please enter a prompt')
+      return
+    }
+
+    try {
+      const generationId = await createGeneration('g-2', promptToUse, selectedInputImages)
+      await loadGenerations()
+      
+      const formData = new FormData()
+      formData.append('prompt', promptToUse)
+      formData.append('modelRunId', sticker.model_run_id)
+      formData.append('nodeId', 'g-2')
+      formData.append('generationId', generationId)
+      selectedInputImages.forEach(url => formData.append('imageUrls', url))
+
+      const response = await fetch('/api/new-fal-gemini-2.5', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+      
+      if (result.success && result.data.imageUrl) {
+        await appendToImageHistory(result.data.imageUrl, 'g-2')
+        await loadGenerations()
+      } else {
+        throw new Error(result.error || 'Failed to generate image')
+      }
+    } catch (error) {
+      console.error('Gemini 2 generation error:', error)
+      alert(error instanceof Error ? error.message : 'Failed to generate image')
+      await loadGenerations()
+    }
+  }
+
+  const handleSeedreamGenerate = async () => {
+    if (selectedInputImages.length === 0) {
+      alert('Please select at least one image from the Input Images node')
+      return
+    }
+
+    const promptToUse = textPrompt.trim() || globalPrompt.trim()
+    console.log('🎨 Seedream Generation - Using prompt:', {
+      textPrompt: textPrompt,
+      globalPrompt: globalPrompt,
+      promptToUse: promptToUse
+    })
+    
+    if (!promptToUse) {
+      alert('Please enter a prompt')
+      return
+    }
+
+    try {
+      const generationId = await createGeneration('s-1', promptToUse, selectedInputImages)
+      await loadGenerations()
+      
+      const formData = new FormData()
+      formData.append('prompt', promptToUse)
+      formData.append('modelRunId', sticker.model_run_id)
+      formData.append('nodeId', 's-1')
+      formData.append('generationId', generationId)
+      selectedInputImages.forEach(url => formData.append('imageUrls', url))
+
+      const response = await fetch('/api/seedream-v4-edit', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+      
+      if (result.success && result.data.imageUrl) {
+        await appendToImageHistory(result.data.imageUrl, 's-1')
+        await loadGenerations()
+      } else {
+        throw new Error(result.error || 'Failed to generate image')
+      }
+    } catch (error) {
+      console.error('Seedream generation error:', error)
+      alert(error instanceof Error ? error.message : 'Failed to generate image')
+      await loadGenerations()
+    }
+  }
+
+  const initialNodes: Node[] = useMemo(() => [
+    {
+      id: 'text-prompt',
+      type: 'textPromptNode',
+      position: nodePositions['text-prompt'],
+      data: {
+        setText: setTextPrompt,
+      },
+    },
+    {
+      id: 'internal-1',
+      type: 'internalNode',
+      position: nodePositions['internal-1'],
+      data: {
+        internalNotes,
+        setInternalNotes,
+        sticker,
+      },
+    },
+    {
+      id: 'user-info-1',
+      type: 'userInfoNode',
+      position: nodePositions['user-info-1'],
+      data: {
+        sticker,
+      },
+    },
+    {
+      id: 'images-1',
+      type: 'inputImagesNode',
+      position: nodePositions['images-1'],
+      data: { 
+        sticker,
+        includeOriginalDesign,
+        setIncludeOriginalDesign,
+        includeInputImage,
+        setIncludeInputImage,
+        additionalImages,
+        setAdditionalImages,
+        selectedImages: selectedInputImages,
+        setSelectedImages: setSelectedInputImages,
+      },
+    },
+    /* COMMENTED OUT - OLD CODE FROM HERE TO LINE 957
             method: 'POST',
             body: geminiFormData
           }).catch(networkError => {
@@ -423,8 +836,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           const formData = new FormData()
           formData.append('prompt', prompt)
           
-          // Collect image URLs
-          const imageUrls: string[] = getSelectedImages()
+          // Use selectedInputImages which is managed by InputImagesNode
+          const imageUrls: string[] = selectedInputImages.length > 0 ? selectedInputImages : getSelectedImages()
           
           // Add each imageUrl separately
           imageUrls.forEach(url => formData.append('imageUrls', url))
@@ -511,8 +924,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           const formData = new FormData()
           formData.append('prompt', prompt)
           
-          // Collect image URLs
-          const imageUrls: string[] = getSelectedImages()
+          // Use selectedInputImages which is managed by InputImagesNode
+          const imageUrls: string[] = selectedInputImages.length > 0 ? selectedInputImages : getSelectedImages()
           
           // Add each imageUrl separately
           imageUrls.forEach(url => formData.append('imageUrls', url))
@@ -573,12 +986,16 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         ...prev,
         [tool]: { 
           ...(prev[tool] as object || {}), 
+          model_run_id: currentModelRunIdRef.current,
           status: 'completed', 
           imageUrl: result.imageUrl,
           prompt: prompt,
           inputImages: result.inputImages
         }
       }))
+
+      // Save to image_history
+      await appendToImageHistory(result.imageUrl, 'g1')
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : `Failed to generate with ${tool}`
@@ -590,6 +1007,7 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         ...prev,
         [tool]: { 
           ...(prev[tool] as object || {}), 
+          model_run_id: currentModelRunIdRef.current,
           status: 'failed',
           error: errorMessage,
           cancelled: isCancelled
@@ -602,15 +1020,13 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       } else {
         console.log(`🚫 ${tool} job was cancelled`)
       }
-    }
-  }
-
   // Calculate dynamic positions based on node heights
   const nodePositions = useMemo(() => {
     const basePositions = {
       'prompt-1': { x: 50, y: 250 },
       'images-1': { x: 400, y: 250 },
       'gemini-node': { x: 750, y: 250 },
+      'gemini-node-2': { x: 750, y: 520 },  // Second Gemini node below the first
       'gemini-output': { x: 750, y: 250 },
       'openai-output': { x: 750, y: 320 },
       'flux-max-output': { x: 750, y: 390 },
@@ -622,7 +1038,6 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
 
     // Calculate heights based on node states
     const nodeHeights = {
-      'prompt-1': 150, // Base height for prompt node
       'internal-1': 150, // Base height for internal node
       'user-info-1': 200, // Base height for user info node
       'images-1': 200, // Base height for image node
@@ -700,8 +1115,11 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         setIncludeInputImage,
         additionalImages,
         setAdditionalImages,
+        selectedImages: selectedInputImages,
+        setSelectedImages: setSelectedInputImages,
       },
     },
+    END OF COMMENTED OUT OLD CODE */
     {
       id: 'gemini-node',
       type: 'geminiNode',
@@ -709,28 +1127,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
       data: { 
         title: 'Gemini',
         tool: 'gemini' as const,
-        output: outputs.gemini,
-        onGenerate: async () => {
-          // Mock generation - set to processing
-          updateOutputs(prev => ({
-            ...prev,
-            gemini: { status: 'processing', prompt: globalPrompt, imageUrl: '', timestamp: new Date() }
-          }))
-          
-          // Wait 5 seconds
-          await new Promise(resolve => setTimeout(resolve, 5000))
-          
-          // Set to completed with placeholder image
-          updateOutputs(prev => ({
-            ...prev,
-            gemini: { 
-              status: 'completed', 
-              prompt: globalPrompt, 
-              imageUrl: 'https://placehold.co/512x512/f97316/white?text=Gemini+Generated',
-              timestamp: new Date()
-            }
-          }))
-        },
+        output: getNodeOutput('g-1'),
+        onGenerate: handleGeminiGenerate,
         onAttachToEmail: (imageUrl: string) => {
           console.log('Attaching Gemini image:', imageUrl)
           if (!selectedImages.includes(imageUrl)) {
@@ -742,7 +1140,71 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
             return newSet
           })
         },
-        onClear: () => clearOutput('gemini'),
+        onClear: () => hideGeneration('g-1'),
+        onAddToInputs: (imageUrl: string) => {
+          console.log('Adding Gemini output to input images:', imageUrl)
+          if (!additionalImages.includes(imageUrl)) {
+            setAdditionalImages(prev => [...prev, imageUrl])
+          }
+        },
+      },
+    },
+    {
+      id: 'gemini-node-2',
+      type: 'geminiNode',
+      position: nodePositions['gemini-node-2'],
+      data: { 
+        title: 'Gemini 2',
+        tool: 'gemini2' as const,
+        output: getNodeOutput('g-2'),
+        onGenerate: handleGemini2Generate,
+        onAttachToEmail: (imageUrl: string) => {
+          console.log('Attaching Gemini 2 image:', imageUrl)
+          if (!selectedImages.includes(imageUrl)) {
+            setSelectedImages(prev => [...prev, imageUrl])
+          }
+          setAttachedNodes(prev => {
+            const newSet = new Set([...prev, 'gemini-node-2'])
+            console.log('Updated attached nodes:', Array.from(newSet))
+            return newSet
+          })
+        },
+        onClear: () => hideGeneration('g-2'),
+        onAddToInputs: (imageUrl: string) => {
+          console.log('Adding Gemini 2 output to input images:', imageUrl)
+          if (!additionalImages.includes(imageUrl)) {
+            setAdditionalImages(prev => [...prev, imageUrl])
+          }
+        },
+      },
+    },
+    {
+      id: 'seedream-node',
+      type: 'geminiNode',
+      position: nodePositions['seedream-node'],
+      data: { 
+        title: 'Seedream v4',
+        tool: 'seedream' as const,
+        output: getNodeOutput('s-1'),
+        onGenerate: handleSeedreamGenerate,
+        onAttachToEmail: (imageUrl: string) => {
+          console.log('Attaching Seedream image:', imageUrl)
+          if (!selectedImages.includes(imageUrl)) {
+            setSelectedImages(prev => [...prev, imageUrl])
+          }
+          setAttachedNodes(prev => {
+            const newSet = new Set([...prev, 'seedream-node'])
+            console.log('Updated attached nodes:', Array.from(newSet))
+            return newSet
+          })
+        },
+        onClear: () => hideGeneration('s-1'),
+        onAddToInputs: (imageUrl: string) => {
+          console.log('Adding Seedream output to input images:', imageUrl)
+          if (!additionalImages.includes(imageUrl)) {
+            setAdditionalImages(prev => [...prev, imageUrl])
+          }
+        },
       },
     },
     // {
@@ -905,31 +1367,29 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           setSelectedImages(prev => prev.filter(img => img !== imageUrl))
           
           // Find which node this image belongs to and remove it from attached nodes
-          const fluxImage = (outputs.flux as { imageUrl?: string })?.imageUrl
-          const geminiImage = (outputs.gemini as { imageUrl?: string })?.imageUrl
-          const openaiImage = (outputs.openai as { imageUrl?: string })?.imageUrl
-          const fluxMaxImage = (outputs.flux_max as { imageUrl?: string })?.imageUrl
-          const seedreamImage = (outputs.seedream as { imageUrl?: string })?.imageUrl
+          const geminiImage = getNodeOutput('g-1').imageUrl
+          const gemini2Image = getNodeOutput('g-2').imageUrl
+          const seedreamImage = getNodeOutput('s-1').imageUrl
           
           setAttachedNodes(prev => {
             const newSet = new Set(prev)
-            if (imageUrl === fluxImage) newSet.delete('flux-output')
-            if (imageUrl === geminiImage) newSet.delete('gemini-output')
-            if (imageUrl === openaiImage) newSet.delete('openai-output')
-            if (imageUrl === fluxMaxImage) newSet.delete('flux-max-output')
-            if (imageUrl === seedreamImage) newSet.delete('seedream-output')
+            if (imageUrl === geminiImage) newSet.delete('gemini-node')
+            if (imageUrl === gemini2Image) newSet.delete('gemini-node-2')
+            if (imageUrl === seedreamImage) newSet.delete('seedream-node')
             console.log('Updated attached nodes after detach:', Array.from(newSet))
             return newSet
           })
         },
       },
     },
-  ], [globalPrompt, includeOriginalDesign, includeInputImage, additionalImages, internalNotes, outputs, sticker, selectedImages, isSendingEmail, isSendingCreditEmail, emailMode, attachedNodes, onNext, nodePositions])
+  ], [setGlobalPrompt, includeOriginalDesign, includeInputImage, additionalImages, selectedInputImages, internalNotes, generations, sticker, selectedImages, isSendingEmail, isSendingCreditEmail, emailMode, attachedNodes, onNext, nodePositions])
 
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [
-      // Prompt to all outputs
-      { id: 'prompt-gemini-node', source: 'prompt-1', target: 'gemini-node', animated: true, style: { stroke: '#f97316' } },
+      // Text Prompt to all outputs
+      { id: 'text-prompt-gemini-node', source: 'text-prompt', target: 'gemini-node', animated: true, style: { stroke: '#8b5cf6' } },
+      { id: 'text-prompt-gemini-node-2', source: 'text-prompt', target: 'gemini-node-2', animated: true, style: { stroke: '#8b5cf6' } },
+      { id: 'text-prompt-seedream-node', source: 'text-prompt', target: 'seedream-node', animated: true, style: { stroke: '#8b5cf6' } },
       // { id: 'prompt-flux', source: 'prompt-1', target: 'flux-output', animated: true, style: { stroke: '#8b5cf6' } },
       // { id: 'prompt-gemini', source: 'prompt-1', target: 'gemini-output', animated: true, style: { stroke: '#f97316' } },
       // { id: 'prompt-openai', source: 'prompt-1', target: 'openai-output', animated: true, style: { stroke: '#10b981' } },
@@ -941,6 +1401,8 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
     if (includeOriginalDesign || includeInputImage) {
       edges.push(
         { id: 'images-gemini-node', source: 'images-1', target: 'gemini-node', animated: true, style: { stroke: '#3b82f6' } },
+        { id: 'images-gemini-node-2', source: 'images-1', target: 'gemini-node-2', animated: true, style: { stroke: '#3b82f6' } },
+        { id: 'images-seedream-node', source: 'images-1', target: 'seedream-node', animated: true, style: { stroke: '#3b82f6' } },
       )
       // edges.push(
       //   { id: 'images-flux', source: 'images-1', target: 'flux-output', animated: true, style: { stroke: '#3b82f6' } },
@@ -962,6 +1424,26 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         target: 'email-composer', 
         animated: true, 
         style: { stroke: '#f97316', strokeWidth: 3, strokeDasharray: '8,4' } 
+      })
+    }
+    if (attachedNodes.has('gemini-node-2')) {
+      console.log('Adding Gemini Node 2 → Email edge')
+      edges.push({ 
+        id: 'gemini-node-2-email', 
+        source: 'gemini-node-2', 
+        target: 'email-composer', 
+        animated: true, 
+        style: { stroke: '#f97316', strokeWidth: 3, strokeDasharray: '8,4' } 
+      })
+    }
+    if (attachedNodes.has('seedream-node')) {
+      console.log('Adding Seedream Node → Email edge')
+      edges.push({ 
+        id: 'seedream-node-email', 
+        source: 'seedream-node', 
+        target: 'email-composer', 
+        animated: true, 
+        style: { stroke: '#e11d48', strokeWidth: 3, strokeDasharray: '8,4' } 
       })
     }
     // if (attachedNodes.has('flux-output')) {
@@ -1023,8 +1505,11 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
+  // Update prompt node data when globalPrompt changes (without recreating the node)
+  // REMOVED: This was causing the input to lose focus on every keystroke
+  // The node will get globalPrompt via initialNodes instead
 
-  // Update nodes and edges when state changes
+  // Update nodes and edges when state changes (excluding globalPrompt-triggered updates)
   useEffect(() => {
     setNodes(initialNodes)
     setEdges(initialEdges)
@@ -1048,6 +1533,9 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
           nodeTypes={nodeTypes}
           fitView
           attributionPosition="bottom-left"
+          deleteKeyCode={null}
+          selectionKeyCode={null}
+          multiSelectionKeyCode={null}
         >
           <Controls />
           <MiniMap />

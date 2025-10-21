@@ -210,7 +210,7 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
           input_image_url: modelRun?.input_image_url || '',
           output_image_url: modelRun?.output_image_url || '',
           preprocessed_output_image_url: modelRun?.preprocessed_output_image_url || '',
-          initial_edit_image_url: stickerEdit.image_history?.[0] || '',
+          initial_edit_image_url: stickerEdit.image_history?.[0]?.image_url || '',
           image_history: stickerEdit.image_history || [],
           internal_note: stickerEdit.internal_note || null,
           amount_spent: spending,
@@ -501,14 +501,14 @@ export default function TableViewOverlay({ onClose, onSelectRecord, currentRecor
                         <div className="space-y-1">
                           {record.image_history && record.image_history.length > 0 ? (
                             <div className="flex items-center space-x-1">
-                              {record.image_history.slice(0, 3).map((historyUrl, histIndex) => (
+                              {record.image_history.slice(0, 3).map((historyEntry, histIndex) => (
                                 <div key={histIndex} className="relative group">
                                   <div 
                                     className="w-8 h-8 rounded border-2 border-purple-400 hover:border-purple-600 transition-colors cursor-pointer overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center"
-                                    onClick={() => window.open(historyUrl, '_blank')}
+                                    onClick={() => window.open(historyEntry.image_url, '_blank')}
                                   >
                                     <img
-                                      src={historyUrl}
+                                      src={historyEntry.image_url}
                                       alt={`Edit ${histIndex + 1}`}
                                       className="w-full h-full object-cover"
                                       onError={(e) => {

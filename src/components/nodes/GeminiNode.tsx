@@ -2,11 +2,11 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Flower2 } from 'lucide-react'
+import { Flower2, Pencil } from 'lucide-react'
 
 interface GeminiNodeData {
   title: string
-  tool: 'flux' | 'gemini' | 'openai' | 'flux_max'
+  tool: 'flux' | 'gemini' | 'gemini2' | 'openai' | 'flux_max' | 'seedream'
   output?: {
     status: 'idle' | 'processing' | 'completed' | 'failed'
     imageUrl?: string
@@ -17,6 +17,7 @@ interface GeminiNodeData {
   onGenerate: () => void
   onAttachToEmail?: (imageUrl: string) => void
   onClear?: () => void
+  onAddToInputs?: (imageUrl: string) => void
 }
 
 interface GeminiNodeProps {
@@ -24,7 +25,7 @@ interface GeminiNodeProps {
 }
 
 export default function GeminiNode({ data }: GeminiNodeProps) {
-  const { title, tool, output, onGenerate, onAttachToEmail, onClear } = data
+  const { title, tool, output, onGenerate, onAttachToEmail, onClear, onAddToInputs } = data
   const [brightness, setBrightness] = useState(111)
   const [saturation, setSaturation] = useState(70)
   const [showBrightnessControl, setShowBrightnessControl] = useState(false)
@@ -232,6 +233,20 @@ export default function GeminiNode({ data }: GeminiNodeProps) {
                   filter: tool === 'openai' ? `saturate(${saturation}%) brightness(${brightness}%)` : undefined
                 }}
               />
+              
+              {/* Pencil Button - add to inputs in top left corner */}
+              <button
+                onClick={() => {
+                  if (output.imageUrl && onAddToInputs) {
+                    onAddToInputs(output.imageUrl)
+                  }
+                }}
+                className="absolute top-2 left-2 bg-white/90 hover:bg-white text-blue-500 hover:text-blue-600 rounded-full w-6 h-6 flex items-center justify-center transition-colors shadow-sm border border-gray-200"
+                title="Add to input images"
+                disabled={!onAddToInputs}
+              >
+                <Pencil size={12} />
+              </button>
               
               {/* Bloom Button - always visible in top right corner */}
               <button

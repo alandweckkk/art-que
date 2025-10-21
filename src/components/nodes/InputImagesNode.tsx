@@ -13,6 +13,8 @@ interface InputImagesNodeData {
   setIncludeInputImage: (value: boolean) => void
   additionalImages: string[]
   setAdditionalImages: (images: string[]) => void
+  selectedImages: string[]
+  setSelectedImages: (images: string[]) => void
 }
 
 interface InputImagesNodeProps {
@@ -20,10 +22,22 @@ interface InputImagesNodeProps {
 }
 
 export default function InputImagesNode({ data }: InputImagesNodeProps) {
-  const { sticker, additionalImages, setAdditionalImages } = data
+  const { sticker, additionalImages, setAdditionalImages, selectedImages, setSelectedImages } = data
   
   const [isUploading, setIsUploading] = useState(false)
   const [isDraggingOver, setIsDraggingOver] = useState(false)
+
+  const toggleImageSelection = (imageUrl: string) => {
+    if (selectedImages.includes(imageUrl)) {
+      setSelectedImages(selectedImages.filter(url => url !== imageUrl))
+    } else {
+      setSelectedImages([...selectedImages, imageUrl])
+    }
+  }
+
+  const isImageSelected = (imageUrl: string) => {
+    return selectedImages.includes(imageUrl)
+  }
 
   const handleImageUpload = async (file: File) => {
     if (additionalImages.length >= 8) return // Max 10 total (2 existing + 8 additional)
@@ -91,8 +105,16 @@ export default function InputImagesNode({ data }: InputImagesNodeProps) {
       <div className="space-y-2">
         {/* preprocessed_output_image_url */}
         {sticker.preprocessed_output_image_url && (
-          <div key="preprocessed_output_image_url" className="relative">
-            <div className="w-full rounded-lg bg-gray-50">
+          <div 
+            key="preprocessed_output_image_url" 
+            className="relative cursor-pointer"
+            onClick={() => toggleImageSelection(sticker.preprocessed_output_image_url!)}
+          >
+            <div className={`w-full rounded-lg bg-gray-50 transition-all ${
+              isImageSelected(sticker.preprocessed_output_image_url) 
+                ? 'ring-2 ring-blue-500 ring-offset-2' 
+                : 'hover:ring-2 hover:ring-gray-300'
+            }`}>
               <div 
                 className="w-full aspect-square rounded flex items-center justify-center overflow-hidden p-1"
                 style={{
@@ -108,13 +130,28 @@ export default function InputImagesNode({ data }: InputImagesNodeProps) {
                 />
               </div>
             </div>
+            {isImageSelected(sticker.preprocessed_output_image_url) && (
+              <div className="absolute top-2 left-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            )}
           </div>
         )}
 
         {/* input_image_url */}
         {sticker.input_image_url && (
-          <div key="input_image_url" className="relative">
-            <div className="w-full rounded-lg bg-gray-50">
+          <div 
+            key="input_image_url" 
+            className="relative cursor-pointer"
+            onClick={() => toggleImageSelection(sticker.input_image_url!)}
+          >
+            <div className={`w-full rounded-lg bg-gray-50 transition-all ${
+              isImageSelected(sticker.input_image_url) 
+                ? 'ring-2 ring-blue-500 ring-offset-2' 
+                : 'hover:ring-2 hover:ring-gray-300'
+            }`}>
               <div 
                 className="w-full aspect-square rounded flex items-center justify-center overflow-hidden p-1"
                 style={{
@@ -130,13 +167,28 @@ export default function InputImagesNode({ data }: InputImagesNodeProps) {
                 />
               </div>
             </div>
+            {isImageSelected(sticker.input_image_url) && (
+              <div className="absolute top-2 left-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            )}
           </div>
         )}
 
         {/* Additional images */}
         {additionalImages.map((imageUrl, index) => (
-          <div key={`additional-${index}`} className="relative">
-            <div className="w-full rounded-lg bg-gray-50">
+          <div 
+            key={`additional-${index}`} 
+            className="relative cursor-pointer"
+            onClick={() => toggleImageSelection(imageUrl)}
+          >
+            <div className={`w-full rounded-lg bg-gray-50 transition-all ${
+              isImageSelected(imageUrl) 
+                ? 'ring-2 ring-blue-500 ring-offset-2' 
+                : 'hover:ring-2 hover:ring-gray-300'
+            }`}>
               <div 
                 className="w-full aspect-square rounded flex items-center justify-center overflow-hidden p-1"
                 style={{
@@ -152,16 +204,23 @@ export default function InputImagesNode({ data }: InputImagesNodeProps) {
                 />
               </div>
             </div>
+            {isImageSelected(imageUrl) && (
+              <div className="absolute top-2 left-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center z-10">
+                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            )}
             {/* Remove button */}
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 removeAdditionalImage(index)
               }}
-              className="absolute top-1 right-1 w-4 h-4 bg-gray-400 text-white rounded-full flex items-center justify-center hover:bg-gray-500 transition-colors"
+              className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors z-10"
               title="Remove image"
             >
-              <X className="w-2.5 h-2.5" />
+              <X className="w-3 h-3" />
             </button>
           </div>
         ))}

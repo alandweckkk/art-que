@@ -1,3 +1,9 @@
+export interface ImageHistoryEntry {
+  node_id: string
+  image_url: string
+  state: 'visible' | 'deleted' | 'sent'
+}
+
 export interface StickerEdit {
   sticker_edit_id: string
   model_run_id: string
@@ -12,7 +18,7 @@ export interface StickerEdit {
   output_image_url: string
   preprocessed_output_image_url: string
   initial_edit_image_url: string
-  image_history: string[]
+  image_history: ImageHistoryEntry[]
   internal_note: string | null
   amount_spent: number
   purchased_at: string

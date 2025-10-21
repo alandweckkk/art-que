@@ -67,8 +67,18 @@ export const sendFixedArtwork = async (
     const result = await response.json()
     
     if (result.success) {
+      // Mark feedback as addressed after successful email
+      await supabase
+        .from('model_run')
+        .update({ 
+          feedback_addressed: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sticker.model_run_id)
+      
       alert(`Email sent successfully to ${sticker.customer_email}!\n\nMessage ID: ${result.messageId}`)
       console.log('✅ Email sent successfully:', result)
+      console.log(`✅ Marked record ${sticker.model_run_id} as resolved`)
       return { success: true, result }
     } else {
       console.error('❌ Email send failed:', result.error)
@@ -150,8 +160,18 @@ export const sendCreditEmail = async (
     const result = await response.json()
     
     if (result.success) {
+      // Mark feedback as addressed after successful credit email
+      await supabase
+        .from('model_run')
+        .update({ 
+          feedback_addressed: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sticker.model_run_id)
+      
       alert(`Credit email sent successfully to ${sticker.customer_email}!\n\nMessage ID: ${result.messageId}`)
       console.log('✅ Credit email sent successfully:', result)
+      console.log(`✅ Marked record ${sticker.model_run_id} as resolved`)
       return { success: true, result }
     } else {
       console.error('❌ Credit email failed:', result.error)

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ReactFlowCanvas from '@/components/ReactFlowCanvas'
 import HelpTooltip from '@/components/HelpTooltip'
@@ -8,7 +9,10 @@ import GlobalSearch from '@/components/GlobalSearch'
 import TableViewOverlay from '@/components/TableViewOverlay'
 import { StickerEdit } from '@/types/sticker'
 
-export default function Home() {
+function HomeContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
   const [stickerData, setStickerData] = useState<StickerEdit[]>([])
   const [loading, setLoading] = useState(true)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -21,6 +25,27 @@ export default function Home() {
   const [allRecordIds, setAllRecordIds] = useState<string[]>([]) // All available record IDs
   const [loadedCount, setLoadedCount] = useState(0) // How many records are fully loaded
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false)
+
+  // Update URL when currentIndex changes
+  useEffect(() => {
+    const currentSticker = stickerData[currentIndex]
+    if (currentSticker) {
+      const params = new URLSearchParams()
+      params.set('id', currentSticker.model_run_id)
+      router.replace(`?${params.toString()}`, { scroll: false })
+    }
+  }, [currentIndex, stickerData, router])
+
+  // Load record from URL on initial mount
+  useEffect(() => {
+    const modelRunId = searchParams.get('id')
+    if (modelRunId && allRecordIds.length > 0 && stickerData.length > 0) {
+      const recordIndex = stickerData.findIndex(record => record?.model_run_id === modelRunId)
+      if (recordIndex >= 0 && recordIndex !== currentIndex) {
+        setCurrentIndex(recordIndex)
+      }
+    }
+  }, [searchParams, allRecordIds, stickerData])
 
   useEffect(() => {
     fetchStickerData()
@@ -47,7 +72,7 @@ export default function Home() {
             reaction
           )
         `)
-        .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
+        .gte('created_at', new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString())
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -295,7 +320,7 @@ export default function Home() {
           record.input_image_url,
           record.output_image_url, 
           record.preprocessed_output_image_url,
-          ...record.image_history
+          ...record.image_history.map(entry => entry.image_url)
         ].filter(Boolean)
         
         imagesToPreload.forEach(imageUrl => {
@@ -347,7 +372,7 @@ export default function Home() {
             record.input_image_url,
             record.output_image_url, 
             record.preprocessed_output_image_url,
-            ...record.image_history
+            ...record.image_history.map(entry => entry.image_url)
           ].filter(Boolean) // Remove empty URLs
           
           imagesToPreload.forEach(imageUrl => {
@@ -397,9 +422,25 @@ export default function Home() {
     }
   }
 
-  const handlePrevious = () => {
+  const handlePrevious = async () => {
     if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1)
+      const prevIndex = currentIndex - 1
+      
+      // If we're moving to a record that's not loaded yet, load it on-demand
+      if (!stickerData[prevIndex]) {
+        console.log(`📥 Loading record ${prevIndex + 1} on-demand (going backwards)...`)
+        const record = await fetchSingleRecord(allRecordIds[prevIndex])
+        if (record) {
+          setStickerData(prev => {
+            const newData = [...prev]
+            newData[prevIndex] = record
+            return newData
+          })
+          setLoadedCount(prev => Math.max(prev, prevIndex + 1))
+        }
+      }
+      
+      setCurrentIndex(prevIndex)
     }
   }
 
@@ -572,5 +613,17 @@ export default function Home() {
         />
       )}
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-lg text-gray-600">Loading...</div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   )
 }

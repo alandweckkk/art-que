@@ -2,29 +2,34 @@
 
 import { Handle, Position } from '@xyflow/react'
 
-interface PromptNodeData {
+interface PromptNodeDuplicateData {
   globalPrompt: string
   setGlobalPrompt: (value: string) => void
 }
 
-interface PromptNodeProps {
-  data: PromptNodeData
+interface PromptNodeDuplicateProps {
+  data: PromptNodeDuplicateData
 }
 
-export default function PromptNode({ data }: PromptNodeProps) {
+export default function PromptNodeDuplicate({ data }: PromptNodeDuplicateProps) {
   const { globalPrompt, setGlobalPrompt } = data
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 w-80">
+    <div className="rounded-xl shadow-sm border p-3 w-80 transition-all bg-white border-gray-200">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-medium text-gray-800">Edit Prompt</div>
       </div>
       
-      <div className="space-y-3 nodrag">
+      {/* Content - Always visible and editable */}
+      <div className="space-y-3">
         <textarea
           value={globalPrompt}
           onChange={(e) => setGlobalPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            // Stop event propagation to prevent ReactFlow from capturing keyboard events
+            e.stopPropagation()
+          }}
           placeholder="Enter prompt for image generation..."
           className="w-full p-3 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white nodrag nowheel"
           rows={6}
@@ -35,3 +40,4 @@ export default function PromptNode({ data }: PromptNodeProps) {
     </div>
   )
 }
+
