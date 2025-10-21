@@ -93,7 +93,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
   // Editable email fields state - initialize with prop or empty
   const [toEmail, setToEmail] = useState(customerEmail || '')
   const [isLoadingEmail, setIsLoadingEmail] = useState(!customerEmail) // Loading if no email prop provided
-  const [actualUserId, setActualUserId] = useState(userId) // Store the actual user_id from database
+  const [actualUserId, setActualUserId] = useState(userId || '00000') // Store the actual user_id from database, default to 00000
   const [subject, setSubject] = useState(
     emailMode === 'credit' 
       ? "We've Added a Free Credit to Your Account" 
@@ -140,7 +140,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
 
         if (modelRun?.user_id) {
           // Store the actual user_id (needed for link even if we have email from props)
-          setActualUserId(modelRun.user_id)
+          setActualUserId(modelRun.user_id || '00000')
           
           // If we already have an email from props, don't fetch email
           if (customerEmail) {
@@ -168,9 +168,15 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
           } else {
             console.log('⚠️ No email found for user_id:', modelRun.user_id)
           }
+        } else {
+          // No user_id found, use default
+          console.log('⚠️ No user_id found in model_run, using default: 00000')
+          setActualUserId('00000')
         }
       } catch (error) {
         console.error('Error fetching email:', error)
+        // Ensure we have a fallback user_id even on error
+        setActualUserId('00000')
       } finally {
         setIsLoadingEmail(false)
       }
@@ -194,7 +200,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     // Reset email to prop value when userId changes (new record loaded)
     setToEmail(customerEmail || '')
     setIsLoadingEmail(!customerEmail)
-    setActualUserId(userId) // Reset to prop value, will be updated when email is fetched
+    setActualUserId(userId || '00000') // Reset to prop value, will be updated when email is fetched
     
     setSubject(
       emailMode === 'credit' 
