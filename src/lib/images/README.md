@@ -140,3 +140,4 @@ Required:
 - Processed images are permanently stored on Vercel Blob
 - All operations are logged for debugging
 
+

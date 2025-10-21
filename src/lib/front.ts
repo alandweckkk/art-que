@@ -18,12 +18,14 @@ interface FrontEmailData {
   body: string;
   body_format: 'html' | 'text';
   attachments?: PreparedAttachment[];
+  metadata?: Record<string, any>;
 }
 
 interface FrontReplyData {
   body: string;
   body_format: 'html' | 'text';
   attachments?: PreparedAttachment[];
+  metadata?: Record<string, any>;
 }
 
 interface FrontApiResponse {
@@ -207,6 +209,11 @@ export default class FrontAPIClient {
         formData.append('body', emailData.body);
         formData.append('body_format', emailData.body_format);
 
+        // Add metadata if provided
+        if (emailData.metadata) {
+          formData.append('metadata', JSON.stringify(emailData.metadata));
+        }
+
         for (const attachment of emailData.attachments) {
           const uint8 = new Uint8Array(attachment.data);
           const blob = new Blob([uint8], { type: attachment.contentType });
@@ -221,12 +228,17 @@ export default class FrontAPIClient {
         ) as { id: string; uid: string };
       } else {
         // JSON path without attachments
-        const payload = {
+        const payload: any = {
           to: emailData.to,
           subject: emailData.subject,
           body: emailData.body,
           body_format: emailData.body_format
         };
+
+        // Add metadata if provided
+        if (emailData.metadata) {
+          payload.metadata = emailData.metadata;
+        }
 
         responseData = await this.makeRequest(
           `/channels/${this.config.channelId}/messages`,
@@ -270,6 +282,11 @@ export default class FrontAPIClient {
         formData.append('body_format', emailData.body_format);
         formData.append('is_draft', 'true');
 
+        // Add metadata if provided
+        if (emailData.metadata) {
+          formData.append('metadata', JSON.stringify(emailData.metadata));
+        }
+
         for (const attachment of emailData.attachments) {
           const uint8 = new Uint8Array(attachment.data);
           const blob = new Blob([uint8], { type: attachment.contentType });
@@ -283,13 +300,18 @@ export default class FrontAPIClient {
         ) as { id: string; uid: string };
       } else {
         // JSON path without attachments
-        const payload = {
+        const payload: any = {
           to: emailData.to,
           subject: emailData.subject,
           body: emailData.body,
           body_format: emailData.body_format,
           is_draft: true
         };
+
+        // Add metadata if provided
+        if (emailData.metadata) {
+          payload.metadata = emailData.metadata;
+        }
 
         responseData = await this.makeRequest(
           `/channels/${this.config.channelId}/drafts`,
@@ -329,6 +351,11 @@ export default class FrontAPIClient {
         formData.append('body', replyData.body);
         formData.append('body_format', replyData.body_format);
 
+        // Add metadata if provided
+        if (replyData.metadata) {
+          formData.append('metadata', JSON.stringify(replyData.metadata));
+        }
+
         for (const attachment of replyData.attachments) {
           const uint8 = new Uint8Array(attachment.data);
           const blob = new Blob([uint8], { type: attachment.contentType });
@@ -342,10 +369,15 @@ export default class FrontAPIClient {
         ) as { id: string; uid: string };
       } else {
         // JSON path without attachments
-        const payload = {
+        const payload: any = {
           body: replyData.body,
           body_format: replyData.body_format
         };
+
+        // Add metadata if provided
+        if (replyData.metadata) {
+          payload.metadata = replyData.metadata;
+        }
 
         responseData = await this.makeRequest(
           `/conversations/${conversationId}/messages`,

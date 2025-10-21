@@ -81,3 +81,4 @@ export async function optimizeImage(imageUrl: string): Promise<string> {
   return postprocessImage({ imageUrl, skipBackgroundRemoval: true })
 }
 
+

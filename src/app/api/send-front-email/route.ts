@@ -208,13 +208,20 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       console.error('💥 Error preparing attachments:', attachmentError);
     }
 
+    // Prepare metadata for Front webhook
+    const metadata = {
+      reason: body.emailMode === 'credit' ? 'credit_issued' : 'sticker_edit',
+      model_run_id: body.ticketNumber
+    };
+
     // Prepare email data
     const emailData = {
       to: [body.customerEmail],
       subject: emailTemplate.subject,
       body: emailTemplate.body,
       body_format: 'html' as const,
-      attachments: attachments.length > 0 ? attachments : undefined
+      attachments: attachments.length > 0 ? attachments : undefined,
+      metadata: metadata
     };
 
     // Send email, create draft, or reply to conversation
@@ -224,7 +231,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       const replyData = {
         body: emailTemplate.body,
         body_format: 'html' as const,
-        attachments: attachments.length > 0 ? attachments : undefined
+        attachments: attachments.length > 0 ? attachments : undefined,
+        metadata: metadata
       };
       result = await frontClient.replyToConversation(body.conversationId, replyData);
     } else if (body.isDraft || !body.sendToCustomer) {
@@ -252,26 +260,27 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
       if (isActualSend) {
         try {
         // 1. Insert record into z_email_history to track this email
+        // NOTE: We also rely on front-webhook, but insert here immediately for reliability
         console.log('📝 Inserting email history record...');
         const { error: emailHistoryError } = await supabase
           .from('z_email_history')
           .insert({
             model_run_id: modelRunId,
             user_email: body.customerEmail,
-            type: body.emailMode === 'credit' ? 'credit' : 'fixed_artwork',
+            type: 'outbound',
+            reason: body.emailMode === 'credit' ? 'credit_issued' : 'sticker_edit',
             subject_line: emailTemplate.subject,
             message: emailTemplate.body,
             conversation_id: body.conversationId || null,
             message_id: result.message_id || null,
             source: 'front',
-            payload: result.details || {},
-            reason: body.correctionType || 'manual-correction'
+            payload: result.details || {}
           });
         
         if (emailHistoryError) {
           console.error('❌ Failed to insert email history:', emailHistoryError);
         } else {
-          console.log('✅ Email history record created');
+          console.log('✅ Email history record created with reason:', metadata.reason);
         }
 
         // 2. Mark images as 'sent_artwork' or 'sent_credit' in y_sticker_edits_generations
