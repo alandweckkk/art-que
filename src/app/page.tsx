@@ -22,6 +22,7 @@ function HomeContent() {
   const [pageNumberInput, setPageNumberInput] = useState('')
   const [showTableOverlay, setShowTableOverlay] = useState(false)
   const [showStatsOverlay, setShowStatsOverlay] = useState(false)
+  const [showSidePanel, setShowSidePanel] = useState(false)
   
   // Progressive loading state
   const [allRecordIds, setAllRecordIds] = useState<string[]>([]) // All available record IDs
@@ -646,6 +647,31 @@ function HomeContent() {
               }
             }
           }} />
+          <button
+            onClick={() => setShowSidePanel(true)}
+            className="inline-flex items-center cursor-pointer transition-all duration-200"
+            title="Side Panel"
+            style={{
+              gap: '6px',
+              padding: '6px 14px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #e0e0e0',
+              borderRadius: '12px',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+              fontSize: '14px',
+              color: '#666666'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#f9f9f9';
+              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#ffffff';
+              e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+            }}
+          >
+            <span>Side-Panel</span>
+          </button>
         </div>
       </div>
 
@@ -734,6 +760,36 @@ function HomeContent() {
         <StatsViewOverlay
           onClose={() => setShowStatsOverlay(false)}
         />
+      )}
+
+      {/* Side Panel */}
+      {showSidePanel && (
+        <div 
+          className="fixed top-0 right-0 w-[400px] bg-slate-800 z-[9999] shadow-2xl transition-transform duration-300 ease-in-out"
+          style={{ height: '90vh' }}
+        >
+          {/* Close Button */}
+          <div className="absolute top-4 right-4 z-10">
+            <button
+              onClick={() => setShowSidePanel(false)}
+              className="text-white hover:text-gray-300 transition-colors bg-black bg-opacity-50 rounded-full p-2"
+              title="Close Side Panel"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          
+          {/* Iframe Content */}
+          <iframe
+            src="https://live-front-panel.vercel.app/"
+            className="w-full h-full border-0"
+            title="Live Front Panel"
+            allow="clipboard-read; clipboard-write"
+          />
+        </div>
       )}
     </div>
   )

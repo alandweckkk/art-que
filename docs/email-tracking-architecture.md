@@ -259,3 +259,4 @@ interface FrontEmailData {
 - `update_email_seen_status()` - Cron function
 - `process_email_seen_responses()` - Response processor
 
+

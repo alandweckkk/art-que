@@ -167,6 +167,17 @@ export default function GeminiNode({ data }: GeminiNodeProps) {
             </div>
           )}
           
+          {/* Clear Button - Show when processing or image exists */}
+          {(output?.status === 'processing' || output?.imageUrl) && onClear && (
+            <button 
+              className="text-pink-500 hover:text-pink-600 p-1 hover:bg-pink-50 rounded transition-colors"
+              onClick={onClear}
+              title="Clear image and reset"
+            >
+              <Flower2 size={16} />
+            </button>
+          )}
+
           {/* Email Icon */}
           <button 
             className="text-gray-600 hover:text-gray-800 p-1 hover:bg-gray-50 rounded transition-colors"
@@ -249,16 +260,6 @@ export default function GeminiNode({ data }: GeminiNodeProps) {
                 disabled={!onAddToInputs}
               >
                 <Pencil size={12} />
-              </button>
-              
-              {/* Bloom Button - always visible in top right corner */}
-              <button
-                onClick={onClear}
-                className="absolute top-2 right-2 bg-white/90 hover:bg-white text-pink-500 hover:text-pink-600 rounded-full w-6 h-6 flex items-center justify-center transition-colors shadow-sm border border-gray-200"
-                title="Clear image and reset"
-                disabled={!onClear}
-              >
-                <Flower2 size={12} />
               </button>
             </>
           ) : output?.status === 'processing' ? (

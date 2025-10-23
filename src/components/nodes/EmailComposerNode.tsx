@@ -6,21 +6,8 @@ import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { 
-  Send, 
   ChevronDown, 
-  Bold, 
-  Italic, 
-  Link, 
-  Smile, 
-  AlertTriangle, 
-  Image, 
-  Lock, 
-  Edit3,
-  Calendar,
-  MoreHorizontal,
-  Trash2,
-  Upload,
-  ImageIcon
+  Upload
 } from 'lucide-react'
 
 // Dynamically import ReactQuill to avoid SSR issues
@@ -34,7 +21,7 @@ interface EmailComposerNodeData {
   customerName: string
   userId: string
   selectedImages: string[]
-  onSend: (emailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string; creditAmount?: number }) => void
+  onSend: (emailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string; creditAmount?: number; excludeFromAttachments?: string[] }) => void
   isSending: boolean
   onDetachImage?: (imageUrl: string) => void
   onAttachImage?: (imageUrl: string) => void
@@ -50,14 +37,15 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
   const searchParams = useSearchParams()
   const modelRunId = searchParams.get('id') || userId
   
-  const [showUidPopover, setShowUidPopover] = useState(false)
   const [showSendDropdown, setShowSendDropdown] = useState(false)
   const [showNoImagesPopover, setShowNoImagesPopover] = useState(false)
   const [sendStatus, setSendStatus] = useState<'sent' | 'failed' | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [viewOnlyImages, setViewOnlyImages] = useState<Set<string>>(new Set()) // Images marked to exclude from email
   const dropdownRef = useRef<HTMLDivElement>(null)
   const noImagesPopoverRef = useRef<HTMLDivElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Quill editor configuration - minimal setup
   const quillModules = {
@@ -107,7 +95,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
   
   // Conversation threading state
   const [conversationId, setConversationId] = useState('')
-  const [messageId, setMessageId] = useState('')
+  const [messageId] = useState('')
   const [creditAmount, setCreditAmount] = useState(1)
   
   const isCreditMode = emailMode === 'credit'
@@ -201,6 +189,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     setToEmail(customerEmail || '')
     setIsLoadingEmail(!customerEmail)
     setActualUserId(userId || '00000') // Reset to prop value, will be updated when email is fetched
+    setViewOnlyImages(new Set()) // Clear view-only images when switching records
     
     setSubject(
       emailMode === 'credit' 
@@ -256,16 +245,31 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     }
   }, [showNoImagesPopover])
 
-  // Image upload helper function
+  // Image upload helper function - uploads to server and returns proper URL
   const uploadImageAsBlob = useCallback(async (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const result = e.target?.result as string
-        resolve(result)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status}`)
       }
-      reader.readAsDataURL(file)
-    })
+
+      const result = await response.json()
+      if (result.url) {
+        return result.url
+      } else {
+        throw new Error('No URL returned from upload')
+      }
+    } catch (error) {
+      console.error('Image upload error:', error)
+      throw error
+    }
   }, [])
 
   // Drag and drop handlers
@@ -294,15 +298,53 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
 
     for (const file of imageFiles) {
       try {
-        const blobUrl = await uploadImageAsBlob(file)
+        console.log('📤 Uploading dropped image:', file.name)
+        const uploadedUrl = await uploadImageAsBlob(file)
+        console.log('✅ Image uploaded successfully:', uploadedUrl)
+        
         if (onAttachImage) {
-          onAttachImage(blobUrl)
+          // Check for duplicates before attaching
+          if (!selectedImages.includes(uploadedUrl)) {
+            onAttachImage(uploadedUrl)
+          }
         }
       } catch (error) {
-        console.error('Error uploading image:', error)
+        console.error('❌ Error uploading image:', error)
+        // Could show a toast notification here in the future
       }
     }
-  }, [uploadImageAsBlob, onAttachImage])
+  }, [uploadImageAsBlob, onAttachImage, selectedImages])
+
+  // Handle file input change
+  const handleFileInputChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    const imageFiles = files.filter(file => file.type.startsWith('image/'))
+
+    for (const file of imageFiles) {
+      try {
+        console.log('📤 Uploading selected image:', file.name)
+        const uploadedUrl = await uploadImageAsBlob(file)
+        console.log('✅ Image uploaded successfully:', uploadedUrl)
+        
+        if (onAttachImage && !selectedImages.includes(uploadedUrl)) {
+          onAttachImage(uploadedUrl)
+        }
+      } catch (error) {
+        console.error('❌ Error uploading image:', error)
+        // Could show a toast notification here in the future
+      }
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [uploadImageAsBlob, onAttachImage, selectedImages])
+
+  // Handle drop zone click
+  const handleDropZoneClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
 
   return (
     <div className="bg-white rounded-lg shadow-xl border border-gray-300 w-[500px]">
@@ -337,6 +379,23 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
               className="w-24 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:border-blue-400 bg-white"
               placeholder="Optional"
             />
+            {emailMode === 'artwork' && (
+              <button
+                onClick={() => {
+                  const link = `https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=${actualUserId}`
+                  navigator.clipboard.writeText(link)
+                }}
+                disabled={!actualUserId}
+                className={`px-2 py-1 text-xs rounded transition-colors whitespace-nowrap ${
+                  actualUserId 
+                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+                title={actualUserId ? "Copy to clipboard" : "Loading user ID..."}
+              >
+                copy &apos;click here&apos; url
+              </button>
+            )}
           </div>
           {/* <div className="flex items-center gap-2">
             <span className="text-gray-500">Message ID:</span>
@@ -351,40 +410,12 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
         </div>
       </div>
 
-      {/* Link Preview for Testing */}
-      {emailMode === 'artwork' && (
-        <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
-          <div className="text-xs font-medium text-blue-800 mb-1">Generated Link (for testing):</div>
-          <div className="flex items-center gap-2">
-            <code className={`flex-1 text-xs bg-white px-2 py-1 rounded border border-blue-200 overflow-x-auto whitespace-nowrap ${
-              actualUserId ? 'text-blue-900' : 'text-gray-500'
-            }`}>
-              https://makemeasticker.com/artwork?sticker_edit={modelRunId}&user_id={actualUserId || 'LOADING...'}
-            </code>
-            <button
-              onClick={() => {
-                const link = `https://makemeasticker.com/artwork?sticker_edit=${modelRunId}&user_id=${actualUserId}`
-                navigator.clipboard.writeText(link)
-              }}
-              disabled={!actualUserId}
-              className={`px-2 py-1 text-xs rounded transition-colors whitespace-nowrap ${
-                actualUserId 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-              title={actualUserId ? "Copy to clipboard" : "Loading user ID..."}
-            >
-              Copy
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Email Fields */}
       <div className="px-4 pt-2 pb-3">
         <div className="flex items-center gap-6">
-          {/* To Field - Takes up more space since emails are longer */}
-          <div className="flex items-center flex-[2]">
+          {/* To Field - Takes up 50% of available space */}
+          <div className="flex items-center flex-[1]">
             <div className="text-xs text-gray-600 w-6 flex-shrink-0 font-medium">To</div>
             {isLoadingEmail ? (
               <div className={`flex-1 px-2 py-2 border-b transition-colors ${
@@ -404,7 +435,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                 type="email"
                 value={toEmail}
                 onChange={(e) => setToEmail(e.target.value)}
-                className={`flex-1 text-sm text-gray-900 px-2 py-2 border-b focus:outline-none bg-transparent transition-colors ${
+                className={`flex-1 text-xs text-gray-900 px-2 py-2 border-b focus:outline-none bg-transparent transition-colors ${
                   isCreditMode 
                     ? 'border-orange-200 focus:border-orange-400' 
                     : emailMode === 'artwork'
@@ -416,14 +447,14 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
             )}
           </div>
           
-          {/* Subject Field - Takes up less space */}
-          <div className="flex items-center flex-[3]">
+          {/* Subject Field - Takes up 50% of available space */}
+          <div className="flex items-center flex-[1]">
             <div className="text-xs text-gray-600 w-10 flex-shrink-0 font-medium">Subject</div>
             <input 
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              className={`flex-1 text-sm text-gray-900 px-2 py-2 border-b focus:outline-none bg-transparent transition-colors ${
+              className={`flex-1 text-xs text-gray-900 px-2 py-2 border-b focus:outline-none bg-transparent transition-colors ${
                 isCreditMode 
                   ? 'border-orange-200 focus:border-orange-400' 
                   : emailMode === 'artwork'
@@ -496,13 +527,47 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                 key={imageUrl} 
                 className="relative group"
               >
-                <div className="w-16 h-16 bg-gray-100 rounded-lg border overflow-hidden">
+                <div className={`w-16 h-16 bg-gray-100 rounded-lg border overflow-hidden ${
+                  viewOnlyImages.has(imageUrl) ? 'ring-2 ring-green-500' : ''
+                }`}>
                   <img 
                     src={imageUrl} 
                     alt={`Attachment ${index + 1}`}
-                    className="w-full h-full object-cover"
+                    className={`w-full h-full object-cover ${
+                      viewOnlyImages.has(imageUrl) ? 'opacity-60' : ''
+                    }`}
                   />
+                  {viewOnlyImages.has(imageUrl) && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-green-500 bg-opacity-20">
+                      <span className="text-[10px] font-bold text-green-700 bg-white px-1 rounded">VIEW</span>
+                    </div>
+                  )}
                 </div>
+                {/* View Button - Eye Icon */}
+                <button
+                  onClick={() => {
+                    setViewOnlyImages(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has(imageUrl)) {
+                        newSet.delete(imageUrl)
+                      } else {
+                        newSet.add(imageUrl)
+                      }
+                      return newSet
+                    })
+                  }}
+                  className={`absolute -top-2 -left-2 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${
+                    viewOnlyImages.has(imageUrl)
+                      ? 'bg-green-500 hover:bg-green-600'
+                      : 'bg-blue-500 hover:bg-blue-600'
+                  } text-white`}
+                  title={viewOnlyImages.has(imageUrl) ? "Will NOT be attached (click to attach)" : "Click to exclude from email"}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                  </svg>
+                </button>
                 {/* Detach Button */}
                 {onDetachImage && (
                   <button
@@ -556,7 +621,8 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                         body: getEmailHTML(body),
                         conversationId: conversationId.trim() || undefined,
                         messageId: messageId.trim() || undefined,
-                        creditAmount: isCreditMode ? creditAmount : undefined
+                        creditAmount: isCreditMode ? creditAmount : undefined,
+                        excludeFromAttachments: Array.from(viewOnlyImages)
                       })
                       setSendStatus('sent')
                     } catch (error) {
@@ -725,7 +791,8 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
                         body: getEmailHTML(body),
                         conversationId: conversationId.trim() || undefined,
                         messageId: messageId.trim() || undefined,
-                        creditAmount: isCreditMode ? creditAmount : undefined
+                        creditAmount: isCreditMode ? creditAmount : undefined,
+                        excludeFromAttachments: Array.from(viewOnlyImages)
                       })
                       setSendStatus('sent')
                     } catch (error) {
@@ -756,6 +823,7 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            onClick={handleDropZoneClick}
             className={`flex items-center justify-center px-3 py-2 border-2 border-dashed rounded-lg transition-all cursor-pointer hover:bg-gray-50 ${
               isDragOver
                 ? 'border-blue-400 bg-blue-50'
@@ -764,8 +832,16 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
           >
             <div className="flex items-center gap-2 text-xs text-gray-600">
               <Upload size={14} />
-              <span>Drop images</span>
+              <span>Drop or click</span>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileInputChange}
+              className="hidden"
+            />
           </div>
         )}
 
@@ -790,3 +866,4 @@ export default function EmailComposerNode({ data }: EmailComposerNodeProps) {
     </div>
   )
 }
+

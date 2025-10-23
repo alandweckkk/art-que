@@ -1456,6 +1456,13 @@ export default function ReactFlowCanvas({ sticker, onNext, onPrevious, onComplet
         },
         isSending: emailMode === 'credit' ? isSendingCreditEmail : isSendingEmail,
         emailMode,
+        onAttachImage: (imageUrl: string) => {
+          console.log('Attaching uploaded image:', imageUrl)
+          if (!selectedImages.includes(imageUrl)) {
+            setSelectedImages(prev => [...prev, imageUrl])
+          }
+          // Note: Uploaded images don't belong to specific nodes, so no need to update attachedNodes
+        },
         onDetachImage: (imageUrl: string) => {
           console.log('Detaching image:', imageUrl)
           setSelectedImages(prev => prev.filter(img => img !== imageUrl))

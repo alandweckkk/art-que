@@ -196,3 +196,4 @@ All database changes are tracked in migrations:
 - `/src/lib/front.ts` - Front API client
 - `/src/app/api/send-front-email/route.ts` - Email sending endpoint
 
+

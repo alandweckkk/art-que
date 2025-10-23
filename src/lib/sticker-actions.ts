@@ -9,7 +9,8 @@ export interface EmailData {
   feedback: string
   correctionType: 'manual-correction' | 'credit-issued'
   originalImageUrl: string
-  correctedImageUrls: string[]
+  correctedImageUrls: string[] // For email attachments (filtered)
+  allImageUrls?: string[] // For database writes (complete list)
   isDraft: boolean
   sendToCustomer: boolean
   supportTeamName: string
@@ -26,13 +27,17 @@ export const sendFixedArtwork = async (
   sticker: StickerEdit, 
   selectedImages: string[],
   setIsSendingEmail: (value: boolean) => void,
-  customEmailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string }
+  customEmailData?: { toEmail?: string; subject?: string; body?: string; conversationId?: string; messageId?: string; excludeFromAttachments?: string[] }
 ) => {
   // Allow sending even without images (user may choose "Send Anyway")
   if (!sticker) return
 
   try {
     setIsSendingEmail(true)
+
+    // Filter out images marked as "view only" from email attachments
+    const excludeList = customEmailData?.excludeFromAttachments || []
+    const imagesToAttach = selectedImages.filter(img => !excludeList.includes(img))
 
     const emailData: EmailData = {
       ticketId: sticker.sticker_edit_id,
@@ -42,7 +47,8 @@ export const sendFixedArtwork = async (
       feedback: sticker.feedback_notes,
       correctionType: 'manual-correction',
       originalImageUrl: sticker.preprocessed_output_image_url,
-      correctedImageUrls: selectedImages,
+      correctedImageUrls: imagesToAttach, // Only images to attach to email
+      allImageUrls: selectedImages, // All images for database writes
       isDraft: false,
       sendToCustomer: true,
       supportTeamName: 'MakeMeASticker.com',
@@ -55,7 +61,9 @@ export const sendFixedArtwork = async (
 
     console.log('📧 Sending email with data:', {
       customerEmail: emailData.customerEmail,
-      selectedImages: selectedImages.length,
+      attachedImages: imagesToAttach.length,
+      allImages: selectedImages.length,
+      excludedCount: excludeList.length,
       ticketNumber: emailData.ticketNumber
     })
 

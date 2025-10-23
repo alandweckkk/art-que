@@ -11,7 +11,8 @@ interface SendEmailRequest {
   feedback: string;
   correctionType?: string; // Made optional with fallback
   originalImageUrl: string;
-  correctedImageUrls: string[];
+  correctedImageUrls: string[]; // Images to attach to email
+  allImageUrls?: string[]; // All images for database operations (includes view-only)
   isDraft?: boolean;
   sendToCustomer?: boolean;
   supportEmail?: string;
@@ -284,12 +285,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
         }
 
         // 2. Mark images as 'sent_artwork' or 'sent_credit' in y_sticker_edits_generations
-        // Only mark images that were actually attached to the email
-        // Use the original URLs (correctedImageUrls) to match against the database, 
-        // not processedUrls which contain background-removed versions
-        if (body.correctedImageUrls && body.correctedImageUrls.length > 0) {
+        // Use allImageUrls (complete list) for DB writes, not just correctedImageUrls (email attachments)
+        // This ensures view-only images are also marked as sent in the database
+        const imagesToMarkInDb = body.allImageUrls || body.correctedImageUrls;
+        if (imagesToMarkInDb && imagesToMarkInDb.length > 0) {
           const actionValue = body.emailMode === 'credit' ? 'sent_credit' : 'sent_artwork';
           console.log(`📝 Marking images as '${actionValue}' in y_sticker_edits_generations...`);
+          console.log(`   - Email attachments: ${body.correctedImageUrls.length}, DB updates: ${imagesToMarkInDb.length}`);
           const { error: generationsError } = await supabase
             .from('y_sticker_edits_generations')
             .update({ 
@@ -297,12 +299,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
               updated_at: new Date().toISOString()
             })
             .eq('model_run_id', modelRunId)
-            .in('output_image_url', body.correctedImageUrls);
+            .in('output_image_url', imagesToMarkInDb);
           
           if (generationsError) {
             console.error(`❌ Failed to mark generations as ${actionValue}:`, generationsError);
           } else {
-            console.log(`✅ Marked ${body.correctedImageUrls.length} generation(s) as '${actionValue}'`);
+            console.log(`✅ Marked ${imagesToMarkInDb.length} generation(s) as '${actionValue}'`);
           }
         }
 
@@ -324,8 +326,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
         }
 
         // 4. Replace output URLs and archive old ones in artwork_history
-        // Only do this if images were actually sent
-        if (body.correctedImageUrls && body.correctedImageUrls.length > 0) {
+        // Use allImageUrls (complete list) for determining the new output URL
+        const imagesToUseForUrl = body.allImageUrls || body.correctedImageUrls;
+        if (imagesToUseForUrl && imagesToUseForUrl.length > 0) {
           console.log('📝 Updating model_run URLs and archiving old ones...');
           
           // First, get the current URLs from model_run
@@ -338,8 +341,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendEmail
           if (fetchError || !modelRunData) {
             console.error('❌ Failed to fetch model_run data:', fetchError);
           } else {
-            // Use first image as the new URL (rule: first image added)
-            const newImageUrl = body.correctedImageUrls[0];
+            // Use first image as the new URL (rule: first image added, even if view-only)
+            const newImageUrl = imagesToUseForUrl[0];
             const actionValue = body.emailMode === 'credit' ? 'sent_credit' : 'sent_artwork';
             
             // Build history entry

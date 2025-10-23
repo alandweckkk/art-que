@@ -32,7 +32,7 @@ export default function PromptNodeDuplicate({ data }: PromptNodeDuplicateProps) 
           }}
           placeholder="Enter prompt for image generation..."
           className="w-full p-3 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white nodrag nowheel"
-          rows={6}
+          rows={12}
         />
       </div>
       
